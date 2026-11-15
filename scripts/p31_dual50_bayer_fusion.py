@@ -65,7 +65,7 @@ def fuse(a_path: Path, b_path: Path, output: Path):
     del a, b, out
     if describe(output) != (wa, ha, oa, ma):
         raise ValueError("Output DNG metadata validation failed")
-    print("P31_FUSION_VALIDATED", output, f"{wa}x{ha}", "RGBA_Bayer_unmodified")
+    print("P31_FUSION_VALIDATED", output, f"{wa}x{ha}", "RGGB_Bayer_metadata_preserved")
 
 
 if __name__ == "__main__":
