@@ -1,4 +1,4 @@
-name: Build Xenius FullRes P25A APK
+name: Build Xenius FullRes P25B APK
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     paths:
       - 'XENIUS_P25A_FULLRES_50MP_CI_SOURCE.zip'
       - '.github/workflows/build-p25a.yml'
+      - 'scripts/patch_p25b_orientation.py'
 
 permissions:
   contents: read
@@ -46,6 +47,9 @@ jobs:
           test -f xenius-p25a/settings.gradle
           test -f xenius-p25a/app/build.gradle
 
+      - name: Apply P25B orientation metadata fix
+        run: python3 scripts/patch_p25b_orientation.py xenius-p25a
+
       - name: Build debug APK
         working-directory: xenius-p25a
         run: gradle --no-daemon --stacktrace :app:assembleDebug
@@ -53,6 +57,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: XENIUS_P25A_FULLRES_DEBUG_APK
+          name: XENIUS_P25B_H50_ORIENTATION_DEBUG_APK
           path: xenius-p25a/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
