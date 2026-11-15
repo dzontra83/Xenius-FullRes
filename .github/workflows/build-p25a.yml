@@ -24,12 +24,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android 35 using preinstalled runner SDK
+      - name: Install Android 35 using installed commandline tools
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          command -v sdkmanager
-          sdkmanager --version
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager
+          SDKMGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -n "$SDKMGR"
+          "$SDKMGR" --version
+          "$SDKMGR" 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
