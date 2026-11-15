@@ -46,9 +46,6 @@ jobs:
           test -f xenius-p26/settings.gradle
           test -f xenius-p26/app/build.gradle
 
-      - name: Apply P26 orientation metadata fix
-        run: python3 scripts/patch_p25b_orientation.py xenius-p26
-
       - name: Build debug APK
         working-directory: xenius-p26
         run: gradle --no-daemon --stacktrace :app:assembleDebug
