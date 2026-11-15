@@ -35,7 +35,7 @@ This tells us precisely which path to instrument on a separate, diagnostic GCam 
 
 P30 proved two distinct H85 and two distinct H35 frames: 8192×6144 `RAW_SENSOR` frames, 16-bit storage / 10-bit effective, CFA RGGB, white 1023, black ~=64, each with a distinct CaptureResult. Single DNG file size: 100,718,184 bytes (100,663,296 RAW image bytes plus TIFF header).
 
-First offline proof: `scripts/p31_dual50_bayer_fusion.py` fuses P30 H85 frame B1 and B2 by **pixel-wise rounded mean of original uint16 RGGB Bayer values**, outputting another valid 8192×6144 DNG with the original TIFF tags and pixel memory layout. TIFF/DNG was reopened and a 600×600 pixel ROI verified exact arithmetic. **This is neither registered/aligned nor Google HDR+**. Potential motion ghosting; same-exposure fusion mainly reduces random noise, not exposure range.
+Offline proof: `scripts/p31_dual50_bayer_fusion.py` fuses **both H85 and H35** P30 B1/B2 pairs by pixel-wise rounded mean of original uint16 RGGB Bayer codes, producing two valid 8192×6144 DNGs with original TIFF tags and pixel layout. TIFF/DNG was reopened for both and H85 600×600 ROI confirmed exact arithmetic. H85 output 100,718,184 bytes (BlackLevel 64.01), H35 output 100,718,184 bytes (BlackLevel 63.90). **This is neither registered/aligned nor Google HDR+**. Potential motion ghosting; same-exposure fusion mainly reduces random noise, not exposure range.
 
 ## Exact next patch, in order
 
