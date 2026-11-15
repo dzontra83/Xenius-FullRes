@@ -1,0 +1,62 @@
+name: Build Xenius P28 2-frame F200 HAL probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'payloads/p28_hal_probe_patch.diff.xz.b64'
+      - '.github/workflows/build-p28.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK 35
+        run: |
+          SDKMGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -n "$SDKMGR"
+          "$SDKMGR" 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Unpack confirmed P26 baseline and apply P28 HAL probe
+        run: |
+          set -euo pipefail
+          mkdir -p xenius-p28
+          unzip -q XENIUS_P26_FULLRES_50_200MP_SOURCE.zip -d xenius-p28
+          base64 -d payloads/p28_hal_probe_patch.diff.xz.b64 > /tmp/p28.patch.xz
+          echo 'dfb2f42af50e0df599ab68471ca3cdacd5550ef11dda93294c0c9cb4ef428f75  /tmp/p28.patch.xz' | sha256sum -c -
+          xz -dc /tmp/p28.patch.xz > /tmp/p28.patch
+          patch xenius-p28/app/src/main/java/com/xenius/fullresprobe/MainActivity.java /tmp/p28.patch
+          grep -q 'BURST_2_RAW_IMAGE' xenius-p28/app/src/main/java/com/xenius/fullresprobe/MainActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+          gradle=Path('xenius-p28/app/build.gradle')
+          text=gradle.read_text()
+          text=text.replace("applicationId 'com.xenius.fullresprobe'", "applicationId 'com.xenius.fullresburstprobe'")
+          text=text.replace('versionCode 260', 'versionCode 280')
+          text=text.replace("versionName 'P26-F200-RAW-probe'", "versionName 'P28-2F-HAL-only'")
+          gradle.write_text(text)
+          manifest=Path('xenius-p28/app/src/main/AndroidManifest.xml')
+          text=manifest.read_text().replace('Xenius FullRes P26','Xenius FullRes P28 BURST')
+          # Absolute component name prevents ambiguity with the separate application ID.
+          text=text.replace('android:name=".MainActivity"', 'android:name="com.xenius.fullresprobe.MainActivity"')
+          manifest.write_text(text)
+          PY
+      - name: Build P28 debug APK
+        working-directory: xenius-p28
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XENIUS_P28_2FRAME_F200_HAL_PROBE
+          path: xenius-p28/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
