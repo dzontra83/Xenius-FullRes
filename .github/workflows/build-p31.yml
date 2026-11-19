@@ -8,7 +8,7 @@ on:
       - '.github/workflows/build-p31.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -43,3 +43,14 @@ jobs:
           name: XENIUS_P31_STREAM_LAB_DEBUG_APK
           path: xenius-p31/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Commit APK to branch (artifact download is blocked for the build assistant)
+        run: |
+          set -euo pipefail
+          mkdir -p builds
+          cp xenius-p31/app/build/outputs/apk/debug/app-debug.apk builds/XENIUS_P31_STREAM_LAB_DEBUG.apk
+          sha256sum builds/XENIUS_P31_STREAM_LAB_DEBUG.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add builds/XENIUS_P31_STREAM_LAB_DEBUG.apk
+          git commit -m "CI: P31 Stream Lab debug APK" || exit 0
+          git push origin HEAD:${GITHUB_REF_NAME}
