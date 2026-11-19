@@ -1,0 +1,39 @@
+XENIUS P151J TEST2 — RE-ENTRY KEY40 RECHECK
+2026-11-18 | Vivo X300 Ultra | Xenius LMC 8.3 FullRes 50 MP HDR+
+Package: com.meitu.xenius135a01
+APK: XENIUS_P151J_TEST2_REENTRY_GATE_RECHECK_UNSIGNED.apk
+Unsigned: sign in MT Manager, backup previous APK and XML/profile data.
+
+WHY
+User reports P151J TEST1 works only on first launch; after background/reentry JPEG capture stops. After external key40 OFF=0, reentering Xenius does not set key40=1. The original P151C helper tracks key40 via in-process static LMC/main.Aemodef; its acquire branch at code-unit 340 returns without reading actual key40 when Aemodef is nonzero. P151J TEST1 activates only at Activity.onCreate, which does not run on every resume.
+
+PATCH (experimental)
+1. New CameraActivity.onResume code item, 34 -> 38 code units: prefix invokes LMC/c2a.getC2apiPref(null) before original method body. Original onResume method body unchanged; has no try blocks, original branch targets shifted by +4 code units.
+2. In classes2.dex original LMC/c2a.getC2apiPref, at CU340 change IF-NEZ branch offset from +145 (return) to +2 (fall through to the original vendor getInfo(40) path). Thus Aemodef no longer prevents rechecking the actual key40 state; if external app turned it OFF while process remains open, the helper can set it ON again, without incrementing a counter.
+3. Preserve all other methods including P151J onCreate early activation, original camera close calls and FIX2 automatic DNG cleanup; all native libraries untouched. NO CameraDevice.onClosed redesign is included. No new persistent journal or independent readback after setValue is added.
+
+LIMITATIONS
+- This only targets missing key40 activation on Activity re-entry, and the stale in-process marker. It does not fix an otherwise stuck Camera2 session or RAW Image already closed error. It may not fix a camera session that was configured while key40=0; a fresh camera-device open may be necessary.
+- The original gate's stale journal/close races and stock camera conflict remain; test key40 OFF and stock camera only after Xenius is fully closed and camera idle.
+- If gate still reads 1 but no photo is saved, this patch has NOT proved the cause; collect logs rather than patch again blindly.
+- No on-device Android verifier or Vivo sensor tests were possible; structural validation cannot guarantee successful startup or capture.
+
+OFFLINE CHECKS
+- Source was exact P151J TEST1 APK. ZIP integrity, both DEX SHA1 and Adler32, all method code_off checks, instruction boundaries, and branch destinations passed.
+- classes.dex: only CameraActivity.onResume code item added; all other existing method bodies byte-identical to P151J TEST1 (including onCreate and RAW50).
+- classes2.dex: one 16-bit branch displacement changed from 0x0091 to 0x0002 in the existing key40 helper. All other executable method bytes identical to P151J TEST1.
+- 20 native libraries, images/assets/resources identical to P151J TEST1.
+- SHA256 APK: ebd32750a3e559d54d530afe9040bb901bcd045af6d6b1333c4dd94975907708
+- classes.dex CRC32: 3667710708; classes2.dex CRC32: 801441584.
+
+TEST (capture the failure log BEFORE toggling externally)
+1. Fully close/force-stop Xenius. Use standalone switch OFF, READ = 0. Back up XML before replacing package. Sign TEST2 in MT Manager and install.
+2. Clear logcat: logcat -c.
+3. First launch: read key40 using separate switch (READ only, avoid confusing test) -> 1. Return to Xenius; take two consecutive 50MP 3F photos. Confirm actual JPEG size 8192x6144.
+4. Leave the app normally and re-enter it without force-stop. Check key40 READ (not ON) and take two more photos. Repeat once more.
+5. Fully close Xenius and READ. Desired 0 if initial value was 0, but actual restoration is NOT reimplemented by TEST2.
+6. If still broken, export full logcat before touching key40:
+   logcat -d -b all -v threadtime > /sdcard/Download/P151J_TEST2_FULL.txt
+   Optional focused:
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|RAW50|CLEAN|CameraDevice|CameraManager|CheckPayloadBaseFrameSize|IllegalStateException|Image is already closed|VerifyError|FATAL EXCEPTION' > /sdcard/Download/P151J_TEST2_FOCUS.txt
+7. Recovery: force-stop app, use switch OFF/ON with device idle, reopen for new session. If unstable, uninstall and reinstall signed P151C AUTO DNG CLEAN FIX2 or P151J TEST1 according to preserved backups and XML data.

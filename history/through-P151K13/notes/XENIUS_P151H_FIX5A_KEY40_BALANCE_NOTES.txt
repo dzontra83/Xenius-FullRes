@@ -1,0 +1,41 @@
+XENIUS P151H FIX5A - KEY40 ACQUISITION BALANCE EXPERIMENT
+Vivo X300 Ultra / Xenius LMC8.3, 18 Nov 2026
+Package: com.meitu.xenius135a01
+APK: XENIUS_P151H_FIX5A_KEY40_ACQUIRE_BALANCE_UNSIGNED.apk
+Requires MT Manager signature (same sign method as previous builds).
+
+WHAT THE USER CONFIRMED
+Stock Vivo camera opens after running a separate one-button key40 reset utility.
+The utility source explicitly invokes VivoCameraManager.setValue(40, 0), waits 200 ms, and checks getInfo(40)==0. This strongly implicates gate40 as a cause.
+
+WHAT FIX5A MODIFIES
+Built directly from working-capture P151H FIX4. In classes.dex, method Llel.h (method id 45085) at code units 11..13 used to invoke LMC/c2a.getC2apiPref(null), thereby incrementing P151H's key40 owner counter while building camera capture requests. This invocation is now three NOP instructions. No method sizes, branches or register allocations have changed.
+
+NO OTHER EXECUTABLE CODE MODIFIED
+classes2.dex (key40 helper), FullRes RAW capture, native HDR+ engine, camera open/close methods, RAW50 debug DNG cleanup remain byte-for-byte identical to P151H FIX4.
+
+WHY
+P151H FIX4 counts each getC2apiPref(null) as an acquisition, including per-capture-request invocation. A single camera close cannot balance many acquisitions. FIX5A removes this unintended per-request increment. Acquisition still occurs in the two P151H camera pre-open paths; release still occurs in the existing Lksn.onClosed and Larb close paths.
+
+IMPORTANT LIMITATIONS
+This is NOT the full RawR camera-lifecycle rewrite proposed earlier. The alternate Larb close path STILL releases after CameraDevice.close() returns, not in an onClosed callback. The journal still lacks full camera-idle protected crash recovery and independent getInfo(40) readback. Never treat a VIVO_GATE:0 log as independently verified readback. Without on-device test we cannot assert stock camera restoration is fixed.
+
+TEST PREPARATION
+1. Back up FIX2 and working XML. Force-stop Xenius P151H FIX4.
+2. Use the one-button utility ONCE to reset key40 to 0, outside an active camera session, and verify it says RESET OK (40=0). This ensures P151H doesn't capture 1 as its previous value.
+3. Sign FIX5A in MT Manager. Use a same-certificate install update if Android allows, otherwise backup then uninstall prior Xenius and install newly signed FIX5A.
+4. Clear logs in LADB: logcat -c
+
+TEST
+A. Open FIX5A and take one 50MP 3F photo. Confirm JPEG actual 8192x6144, full image contents and no temporary RAW50_REQ*.dng.
+B. Close Xenius normally and give device a moment to fully close its camera; DO NOT press the key40 reset button after the shot.
+C. Open stock Vivo camera. Its success is the primary acceptance test.
+D. Export:
+  logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|RAW50|CLEAN|ShotLogData|VerifyError|AndroidRuntime|FATAL EXCEPTION|CameraDevice|CameraService' > /sdcard/Download/P151H_FIX5A_GATE_LOG.txt
+
+HOW TO INTERPRET
+VIVO_GATE: 1 at opening, and VIVO_GATE: 0 after Xenius closes are consistent with intended behavior (but record desired set values only).
+If stock camera still fails or the 0 never appears, do not conclude key40 is solved: investigate a missing onClosed/close callback or remaining acquisition count. Force-stop Xenius, use known one-button reset as recovery if safe, and revert to stable P151C AUTO DNG CLEAN FIX2.
+
+VERIFICATION (offline)
+ZIP integrity passed; classes.dex Adler32/SHA1 checks correct; classes2.dex binary identical to P151H FIX4. Exactly three non-header byte differences in classes.dex, all within method Llel.h's former invoke-static. No actual ART verification or device test was run in the container.

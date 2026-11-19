@@ -1,0 +1,70 @@
+XENIUS P151I TEST1 — EARLY KEY40 + IDEMPOTENT ACQUIRE
+Date: 2026-11-18 · Experimental, unsigned Android APK
+Package: com.meitu.xenius135a01
+Input: XENIUS_P151H_FIX5B_KEY40_IDEMPOTENT_UNSIGNED.apk
+User signs in MT Manager and may need to uninstall old version if certificate differs.
+
+REASON
+Testing with the separate ON/OFF switch showed that the 50MP HDR+ pipeline
+may have depended on key40 already being ON before Xenius started. The previously
+working P151C also failed after key40 was switched OFF. It has not yet been proven
+whether the app sets key40 reliably when it starts from zero.
+
+WHAT CHANGED IN THIS APK
+- Restores EXACTLY the three instruction code units (CU4..6) in
+  CameraApp.<init> from the original P151C, calling LMC/c2a.getC2apiPref(null).
+- This acquires key40 early in Application creation, ahead of CameraDevice.openCamera.
+- Keeps the FIX5B idempotent helper: subsequent acquire calls while its in-process
+  owner marker is already set return without inflating the acquisition counter.
+- Keeps both prior pre-open activation sites and prior close/release code.
+- All 50MP RAW and native HDR+ methods and auto DNG cleanup remain unchanged.
+- This is NOT yet a complete onClosed callback redesign or a verified solution.
+
+LIMITATIONS / RISK
+- In Application constructor, AppGlobals.getInitialApplication() may not yet return
+  a Context. If this happens, the crash-persistent SharedPreferences journal may NOT
+  be saved even if key40 is successfully set. Automatic crash recovery may therefore
+  fail. The external ON/OFF switch remains the safe recovery method when the camera
+  is idle. We will need lifecycle logs to see which state applies on device.
+- Alternate Camera2 close path still releases after CameraDevice.close() returns,
+  not after a confirmed onClosed callback. A race remains.
+- Previous value 1 should be restored to 1, not forcibly changed to 0. Therefore
+  START FROM A CONFIRMED KEY40=0 to evaluate restoration to 0.
+- This APK has passed offline ZIP/DEX structural checks but NOT Android ART
+  verification, real camera tests, or validation of key40 restoration.
+
+ONE CLEAN TEST — key40 starts OFF
+1) Back up working P151C AUTO DNG CLEAN FIX2 and your working XML settings.
+2) Exit both Xenius and stock camera. Force-stop Xenius if necessary.
+3) Using the separate Vivo Key40 Switch, press OFF and then READ; confirm 0.
+4) Sign P151I in MT Manager; install (uninstall old Xenius first if certificate
+   differs; this may erase settings, so preserve XML). Keep the switch installed.
+5) Clear LADB log: logcat -c
+6) Open Xenius (without pressing ON in the utility). Capture ONE 50MP 3-frame
+   photo; inspect the actual output content, resolution, and processing completion.
+7) Close Xenius normally, wait for camera teardown, then open the switch and use
+   READ ONLY. Desired: KEY40 readback = 0.
+8) Try stock Vivo camera WITHOUT pressing OFF.
+9) Export:
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|CameraDevice|CameraManager|CameraService|cameraserver|VerifyError|AndroidRuntime|FATAL EXCEPTION|RAW50|ShotLogData|CLEAN' > /sdcard/Download/P151I_KEY40_LOG.txt
+
+DIAGNOSTIC INTERPRETATION
+- 50MP JPEG works AND READ returns 0 AND stock opens: cold-start acquisition and
+  basic normal-close restoration appear to work (repeat test before claiming stable).
+- JPEG works, READ returns 1 after Xenius closes: gate was not restored; normal
+  close ownership/callbacks must be fixed.
+- JPEG works, READ returns 0, stock still fails: camera-service/device close may
+  be the issue rather than key40 state.
+- No JPEG and gate remains 0: pre-open activation may have failed; capture a full
+  log before modifying the vendor key again.
+- Any crash: use the separate OFF switch only while no camera is using key40.
+
+EXACT OFFLINE DIFF / IDENTIFICATION
+- 3 non-header classes.dex bytes in the method CameraApp.<init>, with the code
+  words copied byte-for-byte from original working P151C. No other classes.dex
+  bytecode changes compared to FIX5B.
+- classes2.dex byte-for-byte identical to FIX5B (idempotent acquired-state branch).
+- All other APK member data unchanged from FIX5B.
+- APK SHA256 bb77523d46c463b4767887c938fd5de17142474fc431dde61362829cead6bf8f
+- classes.dex CRC32 2904005511
+- classes2.dex CRC32 1400271208

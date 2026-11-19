@@ -1,0 +1,42 @@
+XENIUS P151H FIX3 - experimental key40 lifecycle (18 November 2026)
+
+Original package: com.meitu.xenius135a01; unsigned APK for user signing in MT Manager.
+Base: P151C AUTO DNG CLEAN FIX2 (device-proven 50 MP native HDR+ 2F/3F/5F and automatic RAW50_REQ*.dng cleanup).
+
+LATEST REPORT
+LMC8.3_VIVO_V2547A(PD2547)_2026-11-18(6).prop has latest crashes at 19:03:01 and 19:03:02 GMT+1.
+Error: VerifyError in LMC/c2a.getC2apiPref at code-unit 0x1B0 (432), Class.getMethod receiver is Object rather than Class.
+Report classes2.dex CRC32: 337211908, matching an intermediate P151H FIX2_GATE_CLASSES2.dex.
+The separately assembled later FIX2B payload had CRC32 1997846372, a build identity mismatch. FIX3 has its own distinct filename and CRC.
+
+FIX3 CHANGE
+Starts from the P151H FIX2B helper with register-state restoration and synchronization.
+At CU430, route before the existing Class.getMethod into a short helper that invokes the original Class.forName("android.hardware.vivocamera.VivoCameraManager"), moves the typed Class result into v0, restores the "setValue" string into v1, and resumes at CU432. This makes receiver type explicit before Class.getMethod, independent of how other paths merged register types.
+The previous preferences cleanup returns restore the original log tag (v1) and other registers.
+
+INVARIANTS
+- FullRes acquisition, timestamp metadata pairing, HDR+ native frame merge and key40 vendor value40 unaffected by new type fix.
+- Original package name, manifest, resources and native libraries unchanged.
+- FIX2 diagnostic RAW50_REQ*.dng cleanup unchanged.
+- Only classes.dex and classes2.dex modified vs working FIX2 base.
+- Key40 helper synchronized, persistent previous-value journal and partial multi-camera acquisition counter retained.
+
+OFFLINE VERIFICATION
+- ZIP integrity, DEX SHA1/Adler32 and branch/instruction layout verified.
+- 3 modified methods in app's DEX against FIX2, no changes to RAW handling or cleanup.
+- DEX2 CRC32 for FIX3: 700103847.
+- No actual Android ART verifier or on-device camera validation was available.
+
+KNOWN RISKS
+- Full RawR-equivalent lifecycle semantics not yet implemented: no definitive idle-camera gate recovery, no confirmed getInfo(40) readback, alternate close may occur before onClosed callback.
+- This is STILL an experimental build, not a stable release. Its key40 logic has not been validated on the device.
+- Android may reject additional bytecode paths; a valid DEX layout is not proof of runtime type safety.
+
+INSTALLATION/TEST
+1. Back up working P151C AUTO DNG CLEAN FIX2 APK and XML settings. Use the original MT Manager signing flow; uninstall old package if certificate differs.
+2. Verify the candidate is FIX3: classes2.dex CRC32 (decimal) 700103847 before signing (and after signing, if MT Manager does not modify DEX).
+3. Install and open; test a single 50MP 3-frame main-lens shot, verify real 8192x6144 JPEG contents and no DNGs.
+4. Only after first success test tele, 2F, 5F, camera reopen and repeated shots.
+5. Export targeted log with LADB:
+logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|VerifyError|AndroidRuntime|FATAL EXCEPTION|RAW50|CLEAN|ShotLogData|CameraDevice|CheckPayloadBaseFrameSize' > /sdcard/Download/P151H_FIX3_LOG.txt
+6. On any crash or wrong FullRes image: reinstall signed FIX2 baseline, do NOT continue P151H tests.
