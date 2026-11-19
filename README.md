@@ -1,9 +1,10 @@
 # Xenius-FullRes
 
-## Current checkpoint: P153B (2026-11-19, user-tested)
+## Current checkpoint: P154B (2026-11-19) — P153B + quiet (no toast, no probe/log files)
 
 Vivo X300 Ultra · LMC 8.3 / Xenius GCam · package `com.meitu.xenius135a01`.
-Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P153/build_p153.py` with `XENIUS_MAXF=25`.
+Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P153/build_p153.py` with `XENIUS_MAXF=25` (= P153B, user-tested),
+then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`).
 
 | Feature | Status |
 |---|---|
@@ -12,6 +13,7 @@ Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P
 | 50 MP HDR+ | up to **25 real frames**, each with its own metadata (P148A, P148C, P152A, P153B); save time up to ~30 s at 20–25 frames |
 | Low light | burst ISO capped at 2400 (GCam 48× gain) with exposure compensation, max 125 ms (P152B) |
 | Overhead | capture-result leak fixed (P152A); probe file only for burst frames (P152C); per-frame debug logging off, no 50 MP engine in 12 MP mode (P153) |
+| Quiet | no RAW50_REQ toast, no Download probe file, no private log files, no ~100 MB fallback DNG dump (P154B) |
 
 Known port limits (not FullRes bugs): no gyro for HDR+ (12 MP too), GCam AWB model has no entry for this sensor, 10-bit data in 16-bit RAW warning.
 
@@ -19,9 +21,10 @@ Known port limits (not FullRes bugs): no gyro for HDR+ (12 MP too), GCam AWB mod
 ```bash
 cd rebuild/P153
 XENIUS_MAXF=25 python3 build_p153.py /path/to/XENIUS_P151K13_MINIMAL_ID9_ONLY_V2_SIGNED.apk XENIUS_P153B_UNSIGNED.apk
+python3 build_p154.py XENIUS_P153B_UNSIGNED.apk XENIUS_P154B_QUIET_UNSIGNED.apk
 ```
 Output is **unsigned**; sign with the same key as the installed build (e.g. MT Manager). The builders stack:
-P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`); each `rebuild/<ver>/` has the script and a README
+P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`) → P154B; each `rebuild/<ver>/` has the script and a README
 with the root cause, the exact changes and the phone test. Builders import each other, so copy all `rebuild/*/build_*.py`
 plus `tools/dex/` into one folder (or set `PYTHONPATH`). `tools/dex/` holds the DEX reader/disassembler (`dex.py`),
 the code-item editor and DEX relocation (`dexpatch.py`) used by every build.
