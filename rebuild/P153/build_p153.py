@@ -15,7 +15,7 @@ from build_p149a import Asm, one, mid, sid, rebuild_apk
 import build_p149b as B, build_p148a as A, build_p148b as K, build_p148c as C, build_p148d as D
 import build_p152a as P, build_p152b as I, build_p152c as Q
 
-MAXF = 30
+MAXF = int(os.environ.get("XENIUS_MAXF", "25"))
 KEEP_TAGS = {'VIVO_GATE', 'RESOLUTION_SWITCH'}
 QUIET = {  # class -> method names (all overloads with code)
     'Laqv;': ['onCaptureCompleted', 'onCaptureProgressed'], 'Laqw;': ['onCaptureCompleted', 'onCaptureProgressed'],
