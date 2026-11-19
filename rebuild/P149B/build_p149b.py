@@ -27,7 +27,7 @@ def fix_hdr(out):
     struct.pack_into('<I', out, 8, zlib.adler32(bytes(out[12:])) & 0xffffffff)
 
 
-def patch_classes(raw):
+def collect_classes(raw):
     assert hashlib.sha256(raw).hexdigest() == K13_DEX_SHA, 'classes.dex is not the K13 checkpoint'
     open('/tmp/_c1.dex', 'wb').write(raw); d = Dex('/tmp/_c1.dex')
     ids = dict(getProperties=mid(d, 'Ljava/lang/System;', 'getProperties', ')Ljava/util/Properties;'),
@@ -89,7 +89,10 @@ def patch_classes(raw):
             return a.done()
         insert(c, p, blkD)
     check(c); new[m] = c
+    return d, new
 
+
+def finalize_classes(raw, d, new):
     out = bytearray(relocate(raw, {k: v.build() for k, v in new.items()}))
 
     # C: AeShotParams.j/.k in place
@@ -100,6 +103,11 @@ def patch_classes(raw):
         struct.pack_into('<2H', out, ins + 12, 0, 0)
     fix_hdr(out)
     return bytes(out)
+
+
+def patch_classes(raw):
+    d, new = collect_classes(raw)
+    return finalize_classes(raw, d, new)
 
 
 def patch_classes2(raw):
