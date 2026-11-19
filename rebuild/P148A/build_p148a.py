@@ -21,6 +21,7 @@ from build_p149a import Asm, one, mid, sid, rebuild_apk
 import build_p149b as B
 
 MAXF = 10
+WAIT_ITERS = 300   # x10 ms
 EXTRA = ['ShotLogData_base_frame_index_get', 'ShotLogData_base_frame_snr_get',
          'ShotLogData_base_frame_timestamp_ns_get', 'ShotLogData_capture_time_get',
          'ShotLogData_final_payload_frame_sharpness_get']          # slots 6..10 (strings unused by any code)
@@ -117,7 +118,7 @@ def extra_methods(d, new):
             a.fix.append((len(a.w), a.pc(), 'k%d' % k, '22t')); a.w += [0x0033 | (2 << 8) | (3 << 12), 0]  # if-ne v2,v3
             a.const_string(0, sid(d, SLOT[k - 1])); a.goto32('wait'); a.label('k%d' % k)
         a.goto32('out')
-        a.label('wait'); a.w += [0x0613, 300]                                       # const/16 v6, 300 (x10 ms)
+        a.label('wait'); a.w += [0x0613, WAIT_ITERS]                                       # const/16 v6, 300 (x10 ms)
         a.label('loop')
         a.inv_static(ids['props'], []); a.move_result_obj(1)
         a.inv_iface(ids['get'], [1, 0]); a.move_result_obj(1); a.if_nez(1, 'out')
