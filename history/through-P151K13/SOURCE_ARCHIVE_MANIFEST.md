@@ -1,6 +1,6 @@
 # Source archives known at P151K13 cutoff
 
-This is an **inventory**, not a GitHub binary backup. These original ZIP archives exist in the project's ChatGPT file Library but are not embedded in this Git commit. No binary ZIP or APK should be considered synced until independently uploaded and verified.
+This inventory records each original source ZIP and its original Library file ID. The **184 source ZIP archives have now been transferred as actual binary data** into six ZIP bundles under `source-archives/through-P151K13/`. See `SOURCE_BUNDLE_INDEX.md` for a per-filename mapping and SHA-256 checksums. The signed P151K13 APK is **not** included in these source bundles.
 
 - Inventory period: after previous GitHub sync (2026-11-15 14:27 UTC) through 2026-11-19 00:36 UTC.
 - Source/archive ZIPs in inventory: 184.

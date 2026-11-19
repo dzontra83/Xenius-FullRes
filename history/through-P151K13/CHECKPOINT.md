@@ -37,7 +37,7 @@ This sync preserves the repository's previous P25–P31 work and adds historical
 - Keep original ID5 and ID9 camera settings and XML unaffected by this documentation sync.
 - Keep original P151K13 APK as an immutable reference (do not overwrite its binary).
 - No signing private keys, user/device logs, DNG photographs, configuration dumps or post-K13 experimental APKs in this checkpoint.
-- The APK and many intermediate **binary** source ZIPs are **not part of this documentation commit**; see `SOURCE_ARCHIVE_MANIFEST.md`. Do not treat the manifest as proof of binary upload.
+- The source ZIP archives are now backed up as six binary bundles under `source-archives/through-P151K13/`; see `SOURCE_BUNDLE_INDEX.md`. The signed 84.95 MB APK remains external to GitHub, with hash and size recorded here.
 
 ## Source material
 Historical technical notes were copied from files generated across the relevant Xenius development sessions, under `history/through-P151K13/notes/`, retaining original filenames. Earlier GitHub P25–P31 source archives and workflows stay untouched.
