@@ -1,4 +1,4 @@
-# Xenius P160 — focus lock removed, OIS copy kept (current checkpoint)
+# Xenius P160 — focus lock removed, OIS copy kept
 
 **APK:** `XENIUS_P160_NOAFLOCK_UNSIGNED.apk` (unsigned). Built on P159. classes.dex SHA-256
 `30d9336bbd86e082c1b9adaf850362878e65fb7d93aa1bb1aff572173278efcf`; classes2.dex = P155.

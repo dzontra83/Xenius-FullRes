@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""XENIUS P158B — steady lens during the 50 MP burst, on top of P157 (classes2.dex unchanged).
+"""XENIUS P158 — steady lens during the 50 MP burst, on top of P157 (classes2.dex unchanged).
 
 The 50 MP burst request is a fresh STILL_CAPTURE template; before P158 only ISO/exposure were copied from the
 preview. Focus and OIS started from template defaults, so the lens/OIS could re-settle right as the burst began.
@@ -9,7 +9,7 @@ In Llei.onCaptureCompleted (the RAW50 trigger):
   L2 just before build() (pc 1298): if a focus distance was stored -> CONTROL_AF_MODE = OFF + LENS_FOCUS_DISTANCE =
      that value (focus locked where the preview was); if an OIS mode was stored -> same LENS_OPTICAL_STABILIZATION_MODE.
 
-Run: python3 build_p158.py XENIUS_P157_STREAM15_UNSIGNED.apk XENIUS_P158B_STEADY_UNSIGNED.apk
+Run: python3 build_p158.py XENIUS_P157_STREAM15_UNSIGNED.apk XENIUS_P158_STEADY_UNSIGNED.apk
 """
 import sys, os, zipfile, hashlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
