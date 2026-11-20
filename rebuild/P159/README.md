@@ -1,4 +1,4 @@
-# Xenius P159 — 12 MP speed fix (current checkpoint)
+# Xenius P159 — 12 MP speed fix
 
 **APK:** `XENIUS_P159_12MPFIX_UNSIGNED.apk` (unsigned). Built on P158B. classes.dex SHA-256
 `5f24d4d4ca2a9e960d9777f359c2359992c0b1107bada94c2d97ae3399e099c5`; classes2.dex = P155.
