@@ -1,4 +1,4 @@
-# Xenius P158B — steady lens during the 50 MP burst (current checkpoint)
+# Xenius P158B — steady lens during the 50 MP burst
 
 **APK:** `XENIUS_P158B_STEADY_UNSIGNED.apk` (unsigned). Built on P157. classes.dex SHA-256
 `94e8d3be5541fa8eed1f14958eec28afabb72572423f972edd8fe82cd19ec50b`; classes2.dex = P155.
