@@ -1,13 +1,13 @@
 # Xenius-FullRes
 
-## Current checkpoint: P167 (2026-11-20) — P165 (50 MP on UW) + burst follows LMC HDR++ exposure + burst-length cap
+## Current checkpoint: P172 (2026-11-20) — P165 (50 MP on UW) + burst-length cap + 35 mm-equivalent focal length
 
 Vivo X300 Ultra · LMC 8.3 / Xenius GCam · package `com.meitu.xenius135a01`.
 Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P153/build_p153.py` with `XENIUS_MAXF=25` (= P153B),
 then `rebuild/P154B/build_p154.py`, `rebuild/P155/build_p155.py` (classes2.dex `2e37dbbd…1589`), `rebuild/P156/build_p156.py`
 (classes.dex `b4c95194…ec35`), `rebuild/P164/build_p164.py`, `rebuild/P164B/build_p164b.py` (classes.dex `dd43b3d2…2ea5`)
-`rebuild/P165/build_p165.py` (classes.dex `a99b8203…3240`), `rebuild/P166/build_p166.py` (`6c80df4e…ecf4`)
-and `rebuild/P167/build_p167.py` (classes.dex `9ec4515c…f81b`).
+`rebuild/P165/build_p165.py` (classes.dex `a99b8203…3240`) and `rebuild/P172/build_p172.py` (= P167 + P168 on P165,
+classes.dex `6f2fb5da…6cc58`). P166 (HDR++ exposure link) and P169–P171 are dropped experiments: see `rebuild/P172/README.md`.
 Details: `rebuild/P167/README.md` (burst cap), `rebuild/P166/README.md` (exposure menu + test), `rebuild/P165/README.md` (UW fix), `rebuild/P164B/README.md` (test results, dropped experiments),
 `rebuild/P165L/README.md` (Download/merge.txt diagnostic log build).
 
@@ -17,11 +17,12 @@ Details: `rebuild/P167/README.md` (burst cap), `rebuild/P166/README.md` (exposur
 | Lenses | 50 MP on 35 mm (ID3), 85 mm (ID5) and **ultra-wide (ID4, 4096-wide RAW) since P165** |
 | key40 (vivo full-size gate) | acquired before every camera open, held while Xenius is in the foreground (P148B/P148D); read back + retried (P155) |
 | 50 MP HDR+ | up to **20 real frames** (cap 20 since P164B: vivo drops frames above ~20), each with its own metadata |
-| Exposure | **HDR++ exposure** (per lens) drives the 50 MP burst via LMC's own ISO/time math (P166); Auto = viewfinder exposure, ISO capped at 2400, max 125 ms (P152B) |
+| Exposure | 50 MP burst copies the viewfinder exposure; ISO capped at 2400 with exposure compensation, max 125 ms (P152B) |
 | Burst length | long shutters cut the frame count to keep a burst <= ~2.5 s (1/7 s → 17 frames, min 3) (P167) |
 | Quiet | no toast, no Download/private log files, no fallback DNG dump (P154B) |
 | Shutter | preview queue flushed before the 50 MP burst (P156); OIS mode held from the preview during the burst (P158B/P160) |
 | Gyro | HDR+ gets gyro samples (normal sensor listener instead of the Pixel-only direct channel) (P162/P162B) |
+| Focal length | EXIF FocalLength = 35 mm-equivalent (14 / 35 / 85 mm in Google Photos) (P168) |
 | Frame count | gallery camera line shows `V2547A <merged>/<handed over> frames` for every HDR+ shot (P163D/P163E) |
 
 Known port limits (not FullRes bugs): GCam AWB model has no entry for this sensor, 10-bit data in 16-bit RAW warning.
@@ -36,11 +37,10 @@ python3 build_p156.py XENIUS_P155_KEY40_UNSIGNED.apk XENIUS_P156_FLUSH_UNSIGNED.
 python3 build_p164.py XENIUS_P156_FLUSH_UNSIGNED.apk XENIUS_P164_UNSIGNED.apk
 python3 build_p164b.py XENIUS_P164_UNSIGNED.apk XENIUS_P164B_20F_UNSIGNED.apk
 python3 build_p165.py XENIUS_P164B_20F_UNSIGNED.apk XENIUS_P165_UW50_UNSIGNED.apk
-python3 build_p166.py XENIUS_P165_UW50_UNSIGNED.apk XENIUS_P166_AEMODE_UNSIGNED.apk
-python3 build_p167.py XENIUS_P166_AEMODE_UNSIGNED.apk XENIUS_P167_UNSIGNED.apk
+python3 build_p172.py XENIUS_P165_UW50_UNSIGNED.apk XENIUS_P172_UNSIGNED.apk
 ```
 Output is **unsigned**; sign with the same key as the installed build (e.g. MT Manager). The builders stack:
-P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`) → P154B → P155 → P156 → P164 → P164B → P165 → P166 → P167 (P157–P163 are experiments, see rebuild/P164B/README.md); each `rebuild/<ver>/` has the script and a README
+P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`) → P154B → P155 → P156 → P164 → P164B → P165 → P172 (P157–P163 are experiments, see rebuild/P164B/README.md); each `rebuild/<ver>/` has the script and a README
 with the root cause, the exact changes and the phone test. Builders import each other, so copy all `rebuild/*/build_*.py`
 plus `tools/dex/` into one folder (or set `PYTHONPATH`). `tools/dex/` holds the DEX reader/disassembler (`dex.py`),
 the code-item editor and DEX relocation (`dexpatch.py`) used by every build.
