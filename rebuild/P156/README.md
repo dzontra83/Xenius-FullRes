@@ -1,4 +1,4 @@
-# Xenius P156 — flush before the 50 MP burst (current checkpoint)
+# Xenius P156 — flush before the 50 MP burst 
 
 **APK:** `XENIUS_P156_FLUSH_UNSIGNED.apk` (unsigned; sign with your K13 key). Built on P155.
 classes.dex SHA-256 `b4c951943d952f47f47b9c1a25c7713f71590a2fdb961067625c18e50020ec35`; classes2.dex = P155.
