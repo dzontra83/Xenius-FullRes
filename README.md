@@ -1,10 +1,11 @@
 # Xenius-FullRes
 
-## Current checkpoint: P154B (2026-11-19) — P153B + quiet (no toast, no probe/log files)
+## Current checkpoint: P156 (2026-11-20) — P154B + key40 verify/retry (P155) + flush before the 50 MP burst (P156)
 
 Vivo X300 Ultra · LMC 8.3 / Xenius GCam · package `com.meitu.xenius135a01`.
 Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P153/build_p153.py` with `XENIUS_MAXF=25` (= P153B, user-tested),
-then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`).
+then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`), `rebuild/P155/build_p155.py` (classes2.dex `2e37dbbd…1589`)
+and `rebuild/P156/build_p156.py` (classes.dex `b4c95194…ec35`).
 
 | Feature | Status |
 |---|---|
@@ -14,6 +15,8 @@ then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`).
 | Low light | burst ISO capped at 2400 (GCam 48× gain) with exposure compensation, max 125 ms (P152B) |
 | Overhead | capture-result leak fixed (P152A); probe file only for burst frames (P152C); per-frame debug logging off, no 50 MP engine in 12 MP mode (P153) |
 | Quiet | no RAW50_REQ toast, no Download probe file, no private log files, no ~100 MB fallback DNG dump (P154B) |
+| key40 | value read back after every write, up to 3 attempts; `VIVO_GATE 1` / `-1` in logcat (P155) |
+| Shutter | preview queue flushed (`abortCaptures`) before the 50 MP burst: first exposure ~355 → ~250 ms (P156) |
 
 Known port limits (not FullRes bugs): no gyro for HDR+ (12 MP too), GCam AWB model has no entry for this sensor, 10-bit data in 16-bit RAW warning.
 
@@ -22,9 +25,11 @@ Known port limits (not FullRes bugs): no gyro for HDR+ (12 MP too), GCam AWB mod
 cd rebuild/P153
 XENIUS_MAXF=25 python3 build_p153.py /path/to/XENIUS_P151K13_MINIMAL_ID9_ONLY_V2_SIGNED.apk XENIUS_P153B_UNSIGNED.apk
 python3 build_p154.py XENIUS_P153B_UNSIGNED.apk XENIUS_P154B_QUIET_UNSIGNED.apk
+python3 build_p155.py XENIUS_P154B_QUIET_UNSIGNED.apk XENIUS_P155_KEY40_UNSIGNED.apk
+python3 build_p156.py XENIUS_P155_KEY40_UNSIGNED.apk XENIUS_P156_FLUSH_UNSIGNED.apk
 ```
 Output is **unsigned**; sign with the same key as the installed build (e.g. MT Manager). The builders stack:
-P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`) → P154B; each `rebuild/<ver>/` has the script and a README
+P149A → P149B → P148A → P148B → P148C → P148D → P152A → P152B → P152C → P153 (P153B = P153 with `XENIUS_MAXF=25`) → P154B → P155 → P156; each `rebuild/<ver>/` has the script and a README
 with the root cause, the exact changes and the phone test. Builders import each other, so copy all `rebuild/*/build_*.py`
 plus `tools/dex/` into one folder (or set `PYTHONPATH`). `tools/dex/` holds the DEX reader/disassembler (`dex.py`),
 the code-item editor and DEX relocation (`dexpatch.py`) used by every build.
