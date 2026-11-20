@@ -4,7 +4,7 @@
 
 Vivo X300 Ultra · LMC 8.3 / Xenius GCam · package `com.meitu.xenius135a01`.
 Built from the P151K13 APK (classes.dex SHA-256 `840d6355…f5d5`) by `rebuild/P153/build_p153.py` with `XENIUS_MAXF=25` (= P153B, user-tested),
-then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`), `rebuild/P155/build_p155.py` (classes2.dex `2e37dbbd…1589`)
+then `rebuild/P154B/build_p154.py` (classes.dex `b3482bca…cbca`), `rebuild/P155/build_p155.py` (classes2.dex `2e37dbbd…1589`),
 `rebuild/P156/build_p156.py` (classes.dex `b4c95194…ec35`), `rebuild/P157/build_p157.py` (classes.dex `b6926409…82e9`)
 and `rebuild/P158B/build_p158.py` (classes.dex `94e8d3be…c50b`).
 
