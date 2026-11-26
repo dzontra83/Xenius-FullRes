@@ -38,8 +38,8 @@ Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 - **Ray** — the idea of capping handheld frames at 1/50 s while ISO stays low (implementation written here).
 - **Google** — HDR+ (Hasinoff et al. 2016): the published ideas of tile alignment and frequency-domain robust merging,
   implemented from scratch here.
-- **Written for this project** — everything else: the XR remosaic, the burst pre-merge, noise measurement, 25 MP
-  downscale, UW quad correction, and all the dex patching. No SCAMERA or vivo code or model files are used.
+- **Written for this project** — everything else: , the burst pre-merge, noise measurement, 25 MP
+  downscale, UW quad correction, and all the dex patching.
 - **Google GCam** and **LMC 8.3** (Xenius port) — the app this all runs in.
 
 ## Previous checkpoint: P175F (2026-11-20) — P172 + crash fixes + 200 MP → 50 MP binned mode (Leica button) + per-mode ZSL frames
