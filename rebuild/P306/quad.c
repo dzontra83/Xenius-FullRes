@@ -445,8 +445,10 @@ static int quad_prepare(const u16* src, int rs, int w, int h, u16* dst, int blac
     /* w: bits 0-15 width, 16-17 mode, 18 QSC (UW table), 19-22 focus weight 0..15 (0 infinity .. 15 >= 2.48 dpt) */
     int mode = (w >> 16) & 3, qsc = (w >> 18) & 1; float fw = (float)((w >> 19) & 15) / 15.f;
     qj.dnc = (float)((w >> 23) & 7) * 0.1f; qj.dnl = (float)((w >> 26) & 7) * 0.05f; if (mode == 1) qj.dnc = qj.dnl = 0;
+    if (mode == 2) { qsc = 0; qj.dnc = qj.dnl = 0; }   /* P297: vivo-remosaiced Bayer: no quad correction / denoise */
     w &= 0xffff; qj.mode = mode; qj.qsc = 0;
     if (w > OW || h > OH || w < 16 || h < 16 || (w & 3) || (h & 3)) return 20;
+    if (mode != 2)
     /* guard: the HAL may ignore forceSensorMode and send a normal (remosaiced) Bayer frame.
        Quad: neighbours (same 2x2 block colour) match better than pixels 2 apart; Bayer: the reverse
        (probe: quad 0.59, Bayer 6.2). Reject clear Bayer so GCam keeps the original frame. */
@@ -565,70 +567,12 @@ static void q_binC(int y0, int y1) {
    pass C: a site of its own quad colour keeps the raw sample; a G site takes the green plane; an R/B site = green +
    the colour difference (raw - green, mean over each 2x2 block of that colour), bilinear between the block centres.
    Mode 2 and 3 of quad_prepare both select it. */
-#ifndef QX_E0
-#define QX_E0 8.f
-#endif
-#ifndef QX_E1
-#define QX_E1 0.03f
-#endif
-static inline int qx_cl(int v, int n) { return v < 0 ? (v + 4 < n ? v + 4 : 0) : (v >= n ? (v - 4 >= 0 ? v - 4 : n - 1) : v); }
-static void q_xg(int y0, int y1) {
-    int w = qj.w, h = qj.h, rs = qj.rsw; const u16* S = qj.src;
+/* P297: mode 2 = the frame is already Bayer (vivo's own remosaic, SR at 25 MP): plain copy, then the pre-merge and the
+   50 -> 25 MP resample run as for ER. (Mode 2/3 used to be the XR remosaic, retired in P293.) */
+static void q_copy(int y0, int y1) {
     for (int y = y0; y < y1; ++y) {
-        const u16* r = S + (i64)y * rs; u16* G = q_green + (i64)y * w;
-        int yn = (y & 1) ? y + 1 : y - 1, yf = (y & 1) ? y - 2 : y + 2;
-        if (yn < 0 || yn >= h) yn = yf; if (yf < 0 || yf >= h) yf = yn;
-        const u16* rn = S + (i64)yn * rs; const u16* rf = S + (i64)yf * rs; const u16* rp = S + (i64)(y ^ 1) * rs;
-        int byq = (y >> 1) & 1;
-        for (int x = 0; x < w; ++x) {
-            int bxq = (x >> 1) & 1;
-            if (bxq != byq) { G[x] = r[x]; continue; }                 /* G block */
-            int xn = (x & 1) ? x + 1 : x - 1, xf = (x & 1) ? x - 2 : x + 2;
-            if (xn < 0 || xn >= w) xn = xf; if (xf < 0 || xf >= w) xf = xn;
-            float v = r[x], hn = r[xn], hf = r[xf], vn = rn[x], vf = rf[x];
-            float gH = (2.f * hn + hf) * (1.f / 3.f), gV = (2.f * vn + vf) * (1.f / 3.f);
-            float e = QX_E0 + QX_E1 * v;                               /* noise floor: flat areas -> plain average */
-            float dH = qabs(hn - hf) + qabs(v - (float)r[x ^ 1]) + e;
-            float dV = qabs(vn - vf) + qabs(v - (float)rp[x]) + e;
-            G[x] = qround((gH * dV + gV * dH) / (dH + dV));
-        }
-    }
-    /* colour difference per R / B block (mean of raw - green over its 4 pixels), one grid per colour, 4 px lattice */
-    int gw = w >> 2; short* Dg = q_diff;
-    for (int c = 0; c < 2; ++c) {
-        int o = c ? 2 : 0; short* D = Dg + (i64)c * gw * (h >> 2);
-        for (int y = (y0 & ~3) + o; y < y1; y += 4) {
-            if (y < y0 || y + 1 >= y1) continue;
-            const u16* a0 = S + (i64)y * rs; const u16* a1 = a0 + rs; const u16* g0 = q_green + (i64)y * w; const u16* g1 = g0 + w;
-            short* d = D + (i64)(y >> 2) * gw;
-            for (int i = 0; i < gw; ++i) { int x = 4 * i + o;
-                int v = (int)a0[x] + a0[x + 1] + a1[x] + a1[x + 1] - (int)g0[x] - g0[x + 1] - g1[x] - g1[x + 1];
-                d[i] = (short)(v >= 0 ? (v + 2) >> 2 : -((2 - v) >> 2)); }
-        }
-    }
-}
-static inline void qx_blk(int t, int o, int n4, int* i0, int* i1, float* f) {   /* block lattice: centres 4 i + o + 0.5 */
-    float u = ((float)t - (float)o - 0.5f) * 0.25f; int k = (int)(u + 64.f) - 64; float r = u - (float)k;
-    if (k < 0) { k = 0; r = 0.f; } if (k >= n4 - 1) { k = n4 - 1; r = 0.f; }
-    *i0 = k; *i1 = k + 1 < n4 ? k + 1 : k; *f = r;
-}
-static void q_xc(int y0, int y1) {
-    int w = qj.w, h = qj.h, rs = qj.rsw, gw = w >> 2, gh = h >> 2; const u16* S = qj.src;
-    for (int y = y0; y < y1; ++y) {
-        const u16* r = S + (i64)y * rs; const u16* G = q_green + (i64)y * w; u16* d = qj.dst + (i64)y * OW;
-        int byq = (y >> 1) & 1;
-        for (int x = 0; x < w; ++x) {
-            int tc = qch(x, y);
-            int bxq = (x >> 1) & 1, qcol = (bxq != byq) ? 1 : (byq ? 2 : 0);
-            if (tc == qcol) { d[x] = r[x]; continue; }
-            if (tc == 1) { d[x] = G[x]; continue; }
-            int o = tc == 0 ? 0 : 2, xa, xb, ya, yb; float fx, fy;
-            const short* D = q_diff + (tc == 0 ? 0 : (i64)gw * gh);
-            qx_blk(x, o, gw, &xa, &xb, &fx); qx_blk(y, o, gh, &ya, &yb, &fy);
-            const short* da = D + (i64)ya * gw; const short* db = D + (i64)yb * gw;
-            float dv = (1.f - fy) * ((1.f - fx) * da[xa] + fx * da[xb]) + fy * ((1.f - fx) * db[xa] + fx * db[xb]);
-            d[x] = qround((float)G[x] + dv);
-        }
+        const u16* s = qj.src + (i64)y * qj.rsw; u16* d = qj.dst + (i64)y * OW;
+        for (int x = 0; x < qj.w; ++x) d[x] = s[x];
     }
 }
 static void q_rem(void) {
@@ -645,19 +589,10 @@ static void q_rem(void) {
 #endif
         }
     }
-    if (qj.mode >= 2) {                           /* XR: green plane, then the output */
-        while ((b = __atomic_fetch_add(&qj.nextA, 1, __ATOMIC_SEQ_CST)) < nb) {
-            int y0 = b * QB, y1 = y0 + QB > qj.h ? qj.h : y0 + QB;
-            q_xg(y0, y1); __atomic_fetch_add(&qj.doneA, 1, __ATOMIC_SEQ_CST);
-        }
-        while (__atomic_load_n(&qj.doneA, __ATOMIC_ACQUIRE) < nb) {
-#ifdef __aarch64__
-            __asm__ volatile("yield");
-#endif
-        }
+    if (qj.mode == 2) {                           /* P297: already Bayer (SR 25 MP): copy */
         while ((b = __atomic_fetch_add(&qj.nextC, 1, __ATOMIC_SEQ_CST)) < nb) {
             int y0 = b * QB, y1 = y0 + QB > qj.h ? qj.h : y0 + QB;
-            q_xc(y0, y1); __atomic_fetch_add(&qj.doneC, 1, __ATOMIC_SEQ_CST);
+            q_copy(y0, y1); __atomic_fetch_add(&qj.doneC, 1, __ATOMIC_SEQ_CST);
         }
         return;
     }

@@ -5,41 +5,43 @@ photos from the native quad sensor mode, our own remosaic and burst merge in fro
 
 > **Continuing in a new chat?** Read [`HANDOFF.md`](HANDOFF.md) first.
 
-## Current build: P290 (2026-11-26)
+## Current build: P306 (2026-11-26)
 
-`rebuild/P290/build_p290.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
-[`rebuild/P290/README.md`](rebuild/P290/README.md).
+`rebuild/P306/build_p306.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
+[`rebuild/P306/README.md`](rebuild/P306/README.md).
 
 ```bash
-cd rebuild/P290
+cd rebuild/P306
 export PYTHONPATH=../P149A:../P149B:../P163:../../tools/dex
-OISB=off SETTLE=200 python3 build_p290.py XENIUS_P174B_UNSIGNED.apk XENIUS_P290_UNSIGNED.apk
+OISB=off SETTLE=200 python3 build_p306.py XENIUS_P174B_UNSIGNED.apk XENIUS_P306_UNSIGNED.apk
 ```
 Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 
 | What | |
 |---|---|
 | RES button | **12 / 50 / 25 MP**; 25 MP = merged 50 MP frame, demosaic + Lanczos-3 + remosaic |
-| Remosaic button | **XR** (own) -> **ER** (Ed's RawR Detail) -> **SR** (vivo stock); tag in the file name (`IMG_<date>_ER_J83.jpg`) |
+| Remosaic button | **ER** (Ed's RawR Detail) <-> **SR** (vivo's own remosaic); tag in the file name (`IMG_<date>_ER_J83.jpg`). SR at 50 MP is stock; SR at 25 MP = vivo remosaic + our merge + resample |
 | Burst merge | sharpest frame as reference, tile alignment with sub-pixel resampling, **frequency-domain robust merge**; HDR+ receives identical frames |
-| Capture | 6 frames in flight; first burst after app start warms up with 1 frame; watchdog after 2 s; AF frozen; 10 ms exposure steps (no 50 Hz banding) |
-| Exposure | handheld 1/50 s while ISO <= 400, then up to 30 ms; steady phone up to 40 ms; night up to 60 ms with OIS; ISO cap 1600 (tele 800); darker shot in dim scenes (night key) |
-| Tone | GCam HDR ratio capped at 1.5; RawR NTRL tone curve as LMC Manual curve (values in HANDOFF) |
-| Settings | one settings profile per mode (12 / 50 / 25) in `/LMC8.3/XML/auto/`; LMC's Save XML carries all three; double-tap dialog has a Settings entry |
+| Capture | 6 frames in flight; first burst after app start warms up with 1 frame; watchdog after 2 s; AF frozen during the burst; 10 ms exposure steps (no 50 Hz banding) |
+| Background | GCam's own background process reaper is off, so a merge finishes when the app is left |
+| Exposure | handheld 1/50 s while ISO <= 400, then up to 30 ms; steady up to 40 ms; night up to 60 ms with OIS; scene-dependent: -0.5 EV in bright light (EV100 >= 8) easing to 0 in dim scenes (EV100 <= 3) |
+| Tone | GCam HDR ratio cap 1.5 (bright) .. 3.5 (dim); highlight (short-exposure) compensation 0 .. -1.0 EV in dim scenes; RawR NTRL-based LMC Manual curve with a softer top (values in HANDOFF) |
+| Focus | viewfinder uses continuous **video** AF (no single-frame probe jumps); fixed centre AF region; optional focus hold (`AFHOLD=1`) |
+| Settings | Advanced > **Disable face detection**; one settings profile per mode (12 / 50 / 25) in `/LMC8.3/XML/auto/` |
 | Shutter | GCam's progress ring sweeps during the 50 / 25 MP burst |
 
 ## Credits
 
 - **Ed (RawR)** — with his permission:
-  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P290/quad.c`), GPL-3.0
-    (`rebuild/P290/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
+  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P306/quad.c`), GPL-3.0
+    (`rebuild/P306/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
   - the **tone**: the RAWR NTRL tone curve values used for the LMC Manual curve;
   - ideas: the shutter progress ring, darker exposure in dim scenes (night key), burst focus lock and noise handling.
 - **Ray** — the idea of capping handheld frames at 1/50 s while ISO stays low (implementation written here).
 - **Google** — HDR+ (Hasinoff et al. 2016): the published ideas of tile alignment and frequency-domain robust merging,
   implemented from scratch here.
-- **Written for this project** — everything else: , the burst pre-merge, noise measurement, 25 MP
-  downscale, UW quad correction, and all the dex patching.
+- **Written for this project** — everything else: the burst pre-merge, noise measurement, 25 MP downscale, UW quad
+  correction, exposure / AF / face-detection controls, and all the dex patching.
 - **Google GCam** and **LMC 8.3** (Xenius port) — the app this all runs in.
 
 ## Previous checkpoint: P175F (2026-11-20) — P172 + crash fixes + 200 MP → 50 MP binned mode (Leica button) + per-mode ZSL frames

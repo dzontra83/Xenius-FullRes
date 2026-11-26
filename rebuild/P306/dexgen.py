@@ -585,9 +585,16 @@ def build_classes3():
     # ---- Leica button = remosaic compare: on -> vivo's own remosaic (no quad) for this shot ----
     if __import__('os').environ.get('NO200', '1') == '1':
         a.cs(1, S('setTemporalBinning')); a.inv(0x71, g.M('LMC/pref;', 'MenuValue', '(' + STR + ')I'), [1]); a.mr(1)
-        if REM3: a.c4(2, 2); a.b22(0x33, 1, 2, 'nostock')                   # if-ne v1, 2 (SR = 2)
-        else: a.b21(0x38, 1, 'nostock')
+        a.b21(0x38, 1, 'nostock')                                         # P293: state != 0 -> SR (stock)
         a.cs(1, S('SR')); a.inv(0x71, g.M('LTBDF;', 'tag', '(' + STR + ')V'), [1])                                # P280: file name tag
+        # P297: SR at 25 MP: GCam expects 5792 x 4344 frames (its metadata is switched), so the vivo-remosaiced 50 MP
+        # frames go through our path in mode 2 (copy, no remosaic) -> pre-merge + 50 -> 25 MP resample. No
+        # forceSensorMode on the request (the HAL keeps its own remosaic). SR at 50 MP stays fully stock.
+        a.cs(1, S('TB25')); a.inv(0x72, mget, [5, 1]); a.mro(1); a.b21(0x38, 1, 'sr50')
+        a.c4(4, 2); a.inv(0x71, ivo, [4]); a.mro(4)
+        a.cs(1, S('quadOn')); a.inv(0x72, mput, [5, 1, 4])
+        sb_new(2); sb_s(2, 3, 'SR 25 MP: vivo remosaic -> merge + resample'); log_sb(2); a.go('null')
+        a.L('sr50')
         sb_new(2); sb_s(2, 3, 'quad skip: SR stock remosaic' if REM3 else 'quad skip: stock remosaic (compare button)'); log_sb(2); a.go('null')
         a.L('nostock')
     # the ISO of this still request (GCam's shot AE, set on the builder before build()); viewfinder ISO if absent
@@ -598,9 +605,8 @@ def build_classes3():
     a.L('qisoh')
     # mode: shot ISO <= QISO -> 0 (Detail remosaic, full 50 MP detail), above -> 1 (quad binning: 4-pixel means,
     # half the noise, 12.5 MP detail upsampled); QMODE forces one (2 or 3 = XR)
-    if REM3:   # button: 0 XR -> mode 3 (own XR remosaic), 1 ER -> mode 0 (RawR Detail)
-        a.cs(4, S('setTemporalBinning')); a.inv(0x71, g.M('LMC/pref;', 'MenuValue', '(' + STR + ')I'), [4]); a.mr(4)
-        a.b21(0x39, 4, 'qer'); a.c4(4, 3); a.cs(1, S('XR')); a.go('qrm'); a.L('qer'); a.c4(4, 0); a.cs(1, S('ER')); a.L('qrm')
+    if REM3:   # P293 button: 0 ER (Ed's Detail remosaic), 1 SR (stock, handled above); XR retired
+        a.c4(4, 0); a.cs(1, S('ER'))
         a.inv(0x71, g.M('LTBDF;', 'tag', '(' + STR + ')V'), [1])                                                   # P280: file name tag
     else:
         a.c4(4, int(__import__('os').environ.get('QLOW', '3')))             # low ISO: 3 XR, 0 RawR Detail
@@ -821,6 +827,39 @@ def build_classes3():
     a.b21(0x38, 5, 'workers')
     a.inv(0x71, nr, [4]); a.go('pfail')
     a.L('ql0')
+    # ---- P295: viewfinder AF mode (Integer value of CONTROL_AF_MODE from Lkxc.p). GCam's CONTINUOUS_PICTURE (4) keeps
+    #      probing (single-frame lens jumps, worst on point lights). -> CONTINUOUS_VIDEO (3); and once the phone has been
+    #      steady (gyro < AFHOLDG rad/s) for AFHOLDMS -> AUTO (1) without a trigger = lens held, no probing at all.
+    #      Movement releases it at once. Other modes (tap AUTO, manual OFF) -> null = unchanged ----
+    INTG_ = 'Ljava/lang/Integer;'
+    a.iof(0, 12, g.T(INTG_)); a.b21(0x38, 0, 'afh0')
+    a.t21(0x1f, 12, g.T(INTG_)); a.inv(0x6e, g.M(INTG_, 'intValue', '()I'), [12]); a.mr(0)
+    a.c4(1, 4); a.b22(0x33, 0, 1, 'null')
+    if __import__('os').environ.get('AFHOLD', '0') == '1':   # P304: hold off by default (felt unnatural)
+        AHG = float(__import__('os').environ.get('AFHOLDG', '0.08')); AHM = int(__import__('os').environ.get('AFHOLDMS', '1200'))
+        a.inv(0x71, getp, []); a.mro(5)
+        a.cs(1, S('TBgyroR')); a.inv(0x72, mget, [5, 1]); a.mro(2); a.b21(0x39, 2, 'afh1')
+        a.inv(0x71, g.M('LTBGyro;', 's', '()V'), [])                       # gyro listener not running yet: start it
+        a.L('afh1')
+        a.cs(1, S('TBgyro')); a.inv(0x72, mget, [5, 1]); a.mro(2); a.b21(0x38, 2, 'afv')
+        a.t21(0x1f, 2, g.T('Ljava/lang/Float;')); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [2]); a.mr(2)
+        fb = struct.unpack('<I', struct.pack('<f', AHG))[0]; a.raw(0x14 | 3 << 8, fb & 0xffff, fb >> 16)
+        a.raw(0x2d | 4 << 8, 2 | 3 << 8); a.b21(0x3b, 4, 'afm')             # cmpl-float: speed >= thr -> moving
+        a.cs(1, S('TBafst')); a.inv(0x72, mget, [5, 1]); a.mro(6); a.b21(0x39, 6, 'afh2')
+        a.inv(0x71, g.M('Ljava/lang/System;', 'currentTimeMillis', '()J'), []); a.mrw(6)
+        a.inv(0x71, g.M('Ljava/lang/Long;', 'valueOf', '(J)Ljava/lang/Long;'), [6, 7]); a.mro(6)
+        a.inv(0x72, mput, [5, 1, 6]); a.go('afv')
+        a.L('afh2')
+        a.t21(0x1f, 6, g.T('Ljava/lang/Long;')); a.inv(0x6e, g.M('Ljava/lang/Long;', 'longValue', '()J'), [6]); a.mrw(6)
+        a.inv(0x71, g.M('Ljava/lang/System;', 'currentTimeMillis', '()J'), []); a.mrw(8)
+        a.raw(0xbc | 8 << 8 | 6 << 12)                                      # sub-long/2addr v8, v6
+        a.raw(0x16 | 6 << 8, AHM)                                           # const-wide/16 v6, AHM
+        a.raw(0x31 | 0 << 8, 8 | 6 << 8); a.b21(0x3a, 0, 'afv')             # cmp-long; < AHM -> still video
+        a.c4(0, 1); a.go('afset')
+        a.L('afm'); a.cs(1, S('TBafst')); a.inv(0x72, g.M('Ljava/util/Map;', 'remove', '(' + OBJ + ')' + OBJ), [5, 1])
+    a.L('afv'); a.c4(0, 3)
+    a.L('afset'); a.inv(0x71, g.M(INTG_, 'valueOf', '(I)' + INTG_), [0]); a.mro(0); a.raw(0x11 | 0 << 8)
+    a.L('afh0')
     # ---- MeteringRectangle[] (CONTROL_AF_REGIONS of a request): empty "camera decides" region -> centre of the
     #      viewfinder crop (props 'Landroid/graphics/Rect;' from Llei), 1/4 x 1/4, weight 1000; else null (unchanged) ----
     MR = 'Landroid/hardware/camera2/params/MeteringRectangle;'; tMRA = g.T('[' + MR); RECT = 'Landroid/graphics/Rect;'
@@ -1226,12 +1265,15 @@ def build_classes3():
     a.inv(0x71, getp, []); a.mro(4); a.inv(0x72, mput, [4, 11, 3])
     sb_new(4); sb_s(4, 5, 'file name tagger on: '); a.inv(0x6e, sbs, [4, 1]); log_sb(4); a.go('ret')
     # ---- P285: night key (RawR idea): shot EV (Float, from AeShotParams.g) -> (EV + off) x 1000.
-    #      EV100 = log2(N^2 x 100 / (t x ISO)) of the last viewfinder frame; off = -NIGHTKEY x smoothstep((NIGHTEV - EV100)
-    #      / NIGHTEV), not below -NIGHTCAP. Missing viewfinder data -> EV unchanged ----
+    #      EV100 = log2(N^2 x 100 / (t x ISO)) of the last viewfinder frame (P291 curve below).
+    #      Missing viewfinder data -> EV unchanged ----
     a.L('isflt')
     _f = lambda x: struct.unpack('<I', struct.pack('<f', x))[0]
     def cf(r, x): v = _f(x); a.raw(0x14 | r << 8, v & 0xffff, v >> 16)
-    NK = float(os.environ.get('NIGHTKEY', '1.7')); NC = float(os.environ.get('NIGHTCAP', '1.0')); NE = float(os.environ.get('NIGHTEV', '10.0'))
+    # P291: off = -NIGHTBASE in normal / bright light (GCam's HDR+ lifts it back), easing to -NIGHTDARK in the dark
+    #       (EV100 <= NIGHTEVLO, no light source) so dark scenes come out a bit brighter; smoothstep between
+    NB = float(os.environ.get('NIGHTBASE', '0.5')); ND = float(os.environ.get('NIGHTDARK', '0.0'))
+    EHI = float(os.environ.get('NIGHTEVHI', '8.0')); ELO = float(os.environ.get('NIGHTEVLO', '3.0'))
     FN = float(os.environ.get('NIGHTFN', '1.85'))
     a.t21(0x1f, 11, g.T('Ljava/lang/Float;')); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [11]); a.mr(0)
     a.inv(0x71, getp, []); a.mro(8)
@@ -1249,14 +1291,25 @@ def build_classes3():
     l2 = struct.unpack('<Q', struct.pack('<d', 0.6931471805599453))[0]
     a.raw(0x18 | 6 << 8, l2 & 0xffff, (l2 >> 16) & 0xffff, (l2 >> 32) & 0xffff, l2 >> 48)
     a.raw(0xce | 4 << 8 | 6 << 12); a.raw(0x8c | 1 << 8 | 4 << 12)                           # v1 = EV100 (float)
-    cf(2, NE); a.raw(0xa7 | 3 << 8, 2 | 1 << 8); a.raw(0xc9 | 3 << 8 | 2 << 12)              # v3 = (NE - EV100) / NE
+    cf(2, EHI); a.raw(0xa7 | 3 << 8, 2 | 1 << 8); cf(2, EHI - ELO); a.raw(0xc9 | 3 << 8 | 2 << 12)   # v3 = (EHI - EV100) / (EHI - ELO)
     cf(2, 0.0); a.raw(0x2d | 4 << 8, 3 | 2 << 8); a.b21(0x3b, 4, 'nk1'); a.raw(0x01 | 3 << 8 | 2 << 12)
     a.L('nk1'); cf(2, 1.0); a.raw(0x2e | 4 << 8, 3 | 2 << 8); a.b21(0x3d, 4, 'nk2'); a.raw(0x01 | 3 << 8 | 2 << 12)
     a.L('nk2'); cf(2, 2.0); a.raw(0xa8 | 4 << 8, 3 | 2 << 8); cf(2, 3.0); a.raw(0xa7 | 4 << 8, 2 | 4 << 8)   # v4 = 3 - 2x
     a.raw(0xc8 | 4 << 8 | 3 << 12); a.raw(0xc8 | 4 << 8 | 3 << 12)                           # v4 = smoothstep
-    cf(2, -NK); a.raw(0xc8 | 4 << 8 | 2 << 12)                                                 # v4 = off
-    cf(2, -NC); a.raw(0x2d | 5 << 8, 4 | 2 << 8); a.b21(0x3b, 5, 'nk3'); a.raw(0x01 | 4 << 8 | 2 << 12)
-    a.L('nk3')
+    # P301: HDR ratio cap for this scene, same smoothstep: HDRCAP (1.5) in bright light .. HDRCAPD (3.0) in the dark, so
+    #       GCam may lift shadows locally (subject in a dim room) instead of us brightening the whole frame (wall blown).
+    #       Read by the LiveHdrMetadata hook in classes.dex (props key = an existing classes.dex string).
+    HB = float(os.environ.get('HDRCAP', '1.5')); HD = float(os.environ.get('HDRCAPD', '3.5'))
+    cf(5, HD - HB); a.raw(0xc8 | 5 << 8 | 4 << 12); cf(6, HB); a.raw(0xc6 | 5 << 8 | 6 << 12)  # v5 = cap
+    a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [5]); a.mro(5)
+    a.inv(0x71, getp, []); a.mro(6); a.cs(7, S('LiveHdrMetadata_max_hdr_ratio_override_set')); a.inv(0x72, mput, [6, 7, 5])
+    # P305: GCam's dual-exposure 'short' (highlight) compensation, EV: 0 in bright light .. ECSHORT (-0.5) in dim scenes,
+    #       so spotlit subjects in a dark room (bananas under a pendant lamp) keep colour; shadows are the HDR ratio's job
+    ECS = float(os.environ.get('ECSHORT', '-1.0'))
+    cf(5, ECS); a.raw(0xc8 | 5 << 8 | 4 << 12)                                                  # v5 = ECS x s
+    a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [5]); a.mro(5)
+    a.cs(7, S('LiveHdrMetadata_manual_ec_short_set')); a.inv(0x72, mput, [6, 7, 5])
+    cf(2, NB - ND); a.raw(0xc8 | 4 << 8 | 2 << 12); cf(2, -NB); a.raw(0xc6 | 4 << 8 | 2 << 12)   # v4 = off = -NB + (NB-ND) s
     sb_new(8); sb_s(8, 9, 'night key ev100='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 1])
     sb_s(8, 9, ' off='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 4])
     sb_s(8, 9, ' user ev='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 0]); log_sb(8)

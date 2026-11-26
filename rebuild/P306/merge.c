@@ -599,8 +599,8 @@ static void pm_add(int kind, int frame, int n) {
 static void pm_add_remosaic(int frame) {
     int nb = pm.nb;
     pm_add(P_SETUP, frame, 1);
-    if ((pm.wbits >> 18) & 1) pm_add(P_QSC, frame, nb);
-    if (pm.mode >= 2) { pm_add(P_XG, frame, nb); pm_add(P_XC, frame, nb); }   /* XR remosaic */
+    if (((pm.wbits >> 18) & 1) && pm.mode != 2) pm_add(P_QSC, frame, nb);
+    if (pm.mode == 2) pm_add(P_XC, frame, nb);                     /* P297: already Bayer: copy */
     else { pm_add(P_A, frame, nb); pm_add(P_M, frame, nb); pm_add(P_C, frame, nb); }
     if (qj.dnc > 0 || qj.dnl > 0) { pm_add(P_D1, frame, nb); pm_add(P_D2, frame, nb); pm_add(P_D3, frame, nb); pm_add(P_D4, frame, nb); }
     pm_add(P_NZ, frame, 1);
@@ -1202,8 +1202,7 @@ static void pm_item(int p, int i) {
     case P_A: q_passA(y0 / 2, (y1 + 1) / 2); break;
     case P_M: q_passM(y0 / 2, (y1 + 1) / 2); break;
     case P_C: q_passC(y0, y1); break;
-    case P_XG: q_xg(y0, y1); break;
-    case P_XC: q_xc(y0, y1); break;
+    case P_XC: q_copy(y0, y1); break;
     case P_D1: q_dn1(y0 / 2, y1 / 2); break;
     case P_D2: q_dn2(y0 / 4, y1 / 4); break;
     case P_D3: q_dn3(y0 / 4, y1 / 4); break;
@@ -1269,6 +1268,11 @@ static void pm_finish(void) {
         mg_put(&o, " night="); mg_int(&o, pm_night ? pm_night : 256);
         if (pm_ds) { mg_put(&o, " out="); mg_int(&o, ds_w2); mg_put(&o, "x"); mg_int(&o, ds_h2); }
         mg_put(&o, " lowdn="); mg_int(&o, pm.lowdn * 1000 / ((i64)mg.w * mg.h + 1));
+        { /* P303: highlight check on the reference raw frame (sampled): per 10000 pixels >= 1015 (sensor clip) and >= 900 */
+          const u16* r = pm.reg[pm.ref]; int rsw = pm.regrs[pm.ref] / 2; i64 nt = 0, nc1 = 0, nc2 = 0;
+          if (r) for (int y = 8; y < pm.h - 8; y += 7) { const u16* p = r + (i64)y * rsw;
+              for (int x = 8; x < pm.w - 8; x += 5) { int v = p[x]; ++nt; if (v >= 1015) ++nc1; if (v >= 900) ++nc2; } }
+          mg_put(&o, " clip="); mg_int(&o, nt ? nc1 * 10000 / nt : -1); mg_put(&o, ","); mg_int(&o, nt ? nc2 * 10000 / nt : -1); }
         mg_put(&o, " sharp="); for (int j = 0; j < pm.nreg; ++j) { if (j) mg_put(&o, ","); mg_int(&o, pm.shrel[j] / 10); if (j == pm.nuse - 1) mg_put(&o, "|"); }
         *o = 0;
         pm.tmp = 0;                                       /* now only pm.keep (same buffer) */

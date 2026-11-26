@@ -32,7 +32,7 @@ import dexgen
 
 MAXF200 = int(os.environ.get('MAXF200', '3'))
 NO200 = os.environ.get('NO200', '1') == '1'
-REM3 = NO200 and os.environ.get('REM3', '1') == '1'   # Leica button cycles XR (own remosaic) -> ER (Ed Detail) -> SR (stock)
+REM3 = NO200 and os.environ.get('REM3', '1') == '1'   # Leica button: ER (Ed Detail) <-> SR (stock)
 LOG = os.environ.get('TBLOG', '0') == '1'
 P174B_DEX = '00043e10e55737b378257c1668415ac86dcfcdf151a10845e0294f8cc18cf1d8'
 
@@ -384,6 +384,19 @@ def patch_classes(raw):
         fAFR = [i for i in range(len(d.fields)) if d.fname(i) == 'Landroid/hardware/camera2/CaptureRequest;->CONTROL_AF_REGIONS:Landroid/hardware/camera2/CaptureRequest$Key;'][0]
         tKWS = T('Lkws;'); kinit = M('Lkws;', '<init>', '(Landroid/hardware/camera2/CaptureRequest$Key;Ljava/lang/Object;)V')
         a = S(0)
+        # P296: Settings > Advanced > 'Disable face detection' (pref key 'STATISTICS_FACE_DETECT_MODE', a string that
+        # already exists in classes.dex): on -> STATISTICS_FACE_DETECT_MODE OFF (0) in every request, so no face boxes
+        # move GCam's AF / AE regions (and the HAL gets no face priority)
+        fFD = [i for i in range(len(d.fields)) if d.fname(i) == 'Landroid/hardware/camera2/CaptureRequest;->STATISTICS_FACE_DETECT_MODE:Landroid/hardware/camera2/CaptureRequest$Key;'][0]
+        a.raw(0x62 | 0 << 8, fFD); a.b22(0x33, 4, 0, 'nfd')
+        a.cs(1, sid(d, 'STATISTICS_FACE_DETECT_MODE')); a.inv(0x71, menu, [1]); a.mr(1); a.b21(0x38, 1, 'make')
+        a.c4(1, 0); a.inv(0x71, M('Ljava/lang/Integer;', 'valueOf', '(I)Ljava/lang/Integer;'), [1]); a.mro(5); a.go('make')
+        a.L('nfd')
+        if os.environ.get('AFVID', '1') == '1':
+            # P294/P295: CONTROL_AF_MODE goes to the helper too (dexgen 'afh'): CONTINUOUS_PICTURE (4) -> CONTINUOUS_VIDEO (3),
+            # or AUTO (1, lens held) while the phone has been steady for AFHOLDMS; other modes unchanged (helper null)
+            fAFM = [i for i in range(len(d.fields)) if d.fname(i) == 'Landroid/hardware/camera2/CaptureRequest;->CONTROL_AF_MODE:Landroid/hardware/camera2/CaptureRequest$Key;'][0]
+            a.raw(0x62 | 0 << 8, fAFM); a.b22(0x32, 4, 0, 't0')             # if key == CONTROL_AF_MODE -> helper
         a.raw(0x62 | 0 << 8, fAFR); a.b22(0x33, 4, 0, 'make')              # if key != CONTROL_AF_REGIONS -> make
         a.L('t0')
         a.cs(1, KFLAG); a.inv(0x71, forname, [1]); a.mro(1); a.inv(0x6e, gdm, [1]); a.mro(1)
@@ -512,11 +525,28 @@ def patch_classes(raw):
         ks = [k for k, _, pl in walk(c.w) if not pl and c.w[k] & 0xff == 0x70 and c.w[k + 1] == lhi]
         assert len(ks) == 1 and c.w[ks[0]] == 0x4070 and c.w[ks[0] + 2] == 0x5438, [hex(x) for x in c.w[ks[0]:ks[0] + 3]]
         fb = struct.unpack('<I', struct.pack('<f', hcap))[0]
+        gpr = mid(d, 'Ljava/lang/System;', 'getProperties', '()Ljava/util/Properties;')
+        mgt = mid(d, 'Ljava/util/Map;', 'get', '(Ljava/lang/Object;)Ljava/lang/Object;')
+        tFl = d.types.index('Ljava/lang/Float;'); fvl = mid(d, 'Ljava/lang/Float;', 'floatValue', '()F')
+        skey = d.strings.index('LiveHdrMetadata_max_hdr_ratio_override_set')
+        sks = d.strings.index('LiveHdrMetadata_manual_ec_short_set')
+        mecs = M('Lcom/google/googlex/gcam/GcamModuleJNI;', 'LiveHdrMetadata_manual_ec_short_set', '(J' + LH + 'F)V')
         def HC(base, na):
+            # P301: cap from props (night key helper: 1.5 bright .. 3.0 dark), else the fixed HDRCAP
             a = S(base)
+            a.inv(0x71, gpr, []); a.mro(3); a.cs(4, skey); a.inv(0x72, mgt, [3, 4]); a.mro(3)
+            a.raw(0x20 | 4 << 8 | 3 << 12, tFl); a.b21(0x38, 4, 'hcd')           # instance-of v4, v3, Float
+            a.raw(0x1f | 3 << 8, tFl); a.inv(0x6e, fvl, [3]); a.mr(5); a.go('hcg')
+            a.L('hcd'); a.raw(0x14 | 5 << 8, fb & 0xffff, fb >> 16)              # const v5, cap
+            a.L('hcg')
             a.raw(0x53 | 3 << 8 | 8 << 12, fla)                                   # iget-wide v3, v8, a
-            a.raw(0x14 | 5 << 8, fb & 0xffff, fb >> 16)                           # const v5, cap
-            a.inv(0x71, mset, [3, 4, 8, 5]); a.c4(5, 1)                          # restore v5 = 1 (used next)
+            a.inv(0x71, mset, [3, 4, 8, 5])
+            # P305: short-exposure (highlight) EC from props, if the night key helper stored one
+            a.inv(0x71, gpr, []); a.mro(3); a.cs(4, sks); a.inv(0x72, mgt, [3, 4]); a.mro(3)
+            a.raw(0x20 | 4 << 8 | 3 << 12, tFl); a.b21(0x38, 4, 'hce')
+            a.raw(0x1f | 3 << 8, tFl); a.inv(0x6e, fvl, [3]); a.mr(5)
+            a.raw(0x53 | 3 << 8 | 8 << 12, fla); a.inv(0x71, mecs, [3, 4, 8, 5])
+            a.L('hce'); a.c4(5, 1)                                                # restore v5 = 1 (used next)
             return a.done()
         insert(c, ks[0] + 3, HC); check(c)
         print('P290 HDR ratio cap', hcap)
@@ -545,7 +575,7 @@ def patch_classes(raw):
         c.w = a.done(); c.regs = 8
         c.tries = [[a.lab['t0'], a.lab['t1'] - a.lab['t0'], 0]]; c.handlers = [[[], a.lab['h']]]
         check(c); fix_outs(c); out[m] = c.build()
-        print('P290 night key', os.environ.get('NIGHTKEY', '1.7'))
+        print('P292 night key base', os.environ.get('NIGHTBASE', '0.5'), 'dark', os.environ.get('NIGHTDARK', '0.0'))
 
     # ---- W1: Lleu reader width check ----
     m = one(d, 'Lleu;', 'onImageAvailable'); c = Code(raw, d.code[m])
@@ -827,6 +857,17 @@ def patch_classes(raw):
                     struct.pack_into('<HH', o, co + 16 + 2 * (k + 1), 21, 0); n += 1
         assert n == 3, n
         fix_hdr(o)
+    if os.environ.get('NOREAP', '1') == '1':
+        # P291: GCam's ProcessReaper (Lmpz.run, every 10 s) kills the process once it is in the background
+        # (importance >= 400, 'refresh experiment configuration'). Our pre-merge runs before GCam's ProcessingService
+        # takes the shot, so leaving the app during the merge got the shot killed. 'if-lt importance, 400' -> goto.
+        open('/tmp/_p291r.dex', 'wb').write(bytes(o)); dr = Dex('/tmp/_p291r.dex')
+        m = one(dr, 'Lmpz;', 'run'); co = dr.code[m]
+        nw = struct.unpack_from('<I', o, co + 12)[0]; w = struct.unpack_from('<%dH' % nw, o, co + 16)
+        k = [i for i in range(nw - 1) if w[i] == 0x1034 and w[i + 1] == 18]
+        assert len(k) == 1 and w[k[0] - 2] == 0x0113 and w[k[0] - 1] == 400, k
+        struct.pack_into('<HH', o, co + 16 + 2 * k[0], 0x0029, 18)                    # goto/16 +18 (keep rescheduling)
+        print('P291 ProcessReaper off'); fix_hdr(o)
     return bytes(o)
 
 
@@ -917,10 +958,10 @@ def patch_classes2(raw):
         assert len(ri) == 1, ri
         struct.pack_into('<HHH', o, off + 2 * ri[0], 0, 0, 0)                        # ReInit() -> nop
     if REM3:
-        # Leica$1: SelState = (SelState + 1) % 3 ('setTemporalBinning' 0 XR, 1 ER, 2 SR)
+        # Leica$1: SelState = (SelState + 1) % 2 ('setTemporalBinning' 0 ER, 1 SR; an old saved 2 still means SR)
         rr = [i for i in range(nw - 1) if (w[i] & 0xff) == 0xdc and (w[i + 1] >> 8) == 2]
         assert len(rr) == 1, rr
-        struct.pack_into('<H', o, off + 2 * rr[0] + 2, (w[rr[0] + 1] & 0xff) | 3 << 8)
+        struct.pack_into('<H', o, off + 2 * rr[0] + 2, (w[rr[0] + 1] & 0xff) | 2 << 8)   # P293: % 2 (ER, SR)
         fix_hdr(o)
         # Leica.UpdateUi: state 2 -> drawable 'aperture_on' (SR icon)
         raw4 = bytes(o); open('/tmp/_p175_2d.dex', 'wb').write(raw4); d = Dex('/tmp/_p175_2d.dex')
