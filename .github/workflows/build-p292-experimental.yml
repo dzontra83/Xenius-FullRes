@@ -1,0 +1,33 @@
+name: P292 experimental XR-only native rebuild
+on:
+  push:
+    branches:
+      - p292-xr-edge-build
+    paths:
+      - '.github/workflows/build-p292-experimental.yml'
+      - 'rebuild/P292/patch_xr_edge.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-lib:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch XR chroma path only
+        run: python3 rebuild/P292/patch_xr_edge.py
+      - name: Compile Android AArch64 library
+        working-directory: rebuild/P290
+        run: |
+          set -euxo pipefail
+          clang --version
+          clang --target=aarch64-linux-android29 -O3 -fPIC -ffreestanding -fno-builtin -nostdlib -shared -fuse-ld=lld -fvisibility=hidden -Wl,-soname,libtbin.so -Wl,-z,now -Wl,--hash-style=both -s -o libtbin-p292.so tbin.c
+          file libtbin-p292.so
+          sha256sum libtbin-p292.so
+          readelf -h libtbin-p292.so | grep -E 'Type:|Machine:'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XENIUS_P292_XR_PATCHED_LIB_ARM64
+          path: rebuild/P290/libtbin-p292.so
+          if-no-files-found: error
