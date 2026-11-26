@@ -1,0 +1,56 @@
+XENIUS P151H FIX2 - experimental key40 register restoration
+Date: 2026-11-18
+Package: com.meitu.xenius135a01
+APK: XENIUS_P151H_FIX2_KEY40_LIFECYCLE_UNSIGNED.apk
+
+SOURCE OF THE LATEST FAILURE
+The user-provided crash report LMC8.3_VIVO_V2547A(PD2547)_2026-11-18(5).prop
+contains a last crash at 18:55:17 Europe/Belgrade, with CRC32:
+ classes.dex 1415058821; classes2.dex 2959167614.
+These match P151H FIX1 exactly.
+java.lang.VerifyError: Verifier rejected class MC.c2a:
+ getC2apiPref(leo) [0x1E2 / CU482]
+ register v1 has type java.lang.Object, expected java.lang.String.
+
+FIX
+In FIX1 the code at CU476 redirects to a new SharedPreferences journal-clear helper. This
+bypassed original const-string v1, "VIVO_GATE" at CU476. The helper also overwrote
+v0 (the integer intended for the original Integer.toString at CU478).
+
+FIX2 changes only the appended key40 journal-clear helper and related DEX data sizes:
+ - Entry CU586 saves integer v0 in v9 (move v9,v0).
+ - All early exits from the journal routine converge at CU618.
+ - CU618 restores v0 (move v0,v9).
+ - CU619 reloads String v1 with "VIVO_GATE".
+ - CU621 returns to original CU478.
+This ensures the original logger sees an int v0 and a String v1 on this path.
+
+INVARIANTS / VERIFICATION
+- Based on FIX2's verified 50 MP HDR+ and automatic RAW50_REQ DNG cleanup.
+- Package name unchanged.
+- Only three methods differ from working FIX2: app constructor, alternate Camera2 handler,
+  key40 helper. FIX2 RAW callback, DNG cleanup, native HDR+ libraries and camera keys untouched.
+- DEX SHA1/Adler32, APK ZIP integrity and resources.arsc alignment pass.
+- All inspected Dalvik instruction/branch/exception boundaries valid.
+- Static checking is NOT Android ART verification, and neither install nor successful
+  camera capture nor key40 restore has been validated on device.
+- RawR's full safety guarantees (camera idle recovery, readback on each key40 change,
+  asynchronous onClosed coverage for both paths) are not implemented fully.
+
+TEST AND ROLLBACK
+1. Back up your fully working XENIUS_P151C_AUTO_DNG_CLEAN_FIX2_UNSIGNED.apk
+   (signed copy) and XML settings.
+2. Sign this unsigned APK in MT Manager; if Android rejects the signing certificate,
+   uninstall the previous package only after backing up its data.
+3. Clear log in LADB: logcat -c
+4. Open the app. Verify camera preview. Start with exactly one FullRes 50 MP
+   main-lens 3-frame photo. Confirm full-image JPEG and no temp DNGs.
+5. Then check ordinary tele lens, reopen/close, 2F/5F.
+6. Capture log in LADB:
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|key40|VerifyError|AndroidRuntime|FATAL EXCEPTION|RAW50|CLEAN|ShotLogData|CameraDevice|CheckPayloadBaseFrameSize' > /sdcard/Download/P151H_FIX2_KEY40_LOG.txt
+7. Any boot failure/black or quarter-frame image: stop P151H tests and reinstall
+   the signed, device-proven P151C AUTO DNG CLEAN FIX2.
+
+KEY40 IS A VIVO GLOBAL VENDOR STATE. Do not operate the stock Vivo camera simultaneously
+with this experimental app while testing gate lifecycle. This build may not yet
+successfully restore the gate on all abnormal paths.

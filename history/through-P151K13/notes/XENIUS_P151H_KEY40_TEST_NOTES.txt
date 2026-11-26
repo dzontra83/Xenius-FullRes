@@ -1,0 +1,45 @@
+XENIUS LMC 8.3 — P151H FIX2 + EXPERIMENTAL KEY40 LIFECYCLE
+18 November 2026 • Vivo X300 Ultra • package: com.meitu.xenius135a01
+
+BASE
+- Built from the user-confirmed working P151C AUTO DNG CLEAN FIX2.
+- Same package name; this APK is deliberately UNSIGNED for signing with MT Manager.
+- Keep your working FIX2 APK and export your XML preferences. You may need to uninstall the installed app to install an APK signed with a different certificate. Uninstalling can erase app data.
+
+PATCHED
+- Existing LMC/c2a.getC2apiPref() key40 helper now synchronized.
+- On first full-size key40 acquisition, journals prior key40 via SharedPreferences and maintains in-process ownership counter.
+- Repeated acquisition increments counter; releases decrement, restore original key40 at final release.
+- Gate acquisition in one early Application constructor removed; existing pre-open main path retained.
+- Alternate Camera2 open path now acquires gate before opening and attempts to release it on its two close paths.
+- Re-activation can reuse stored previous value if a stale journal remains and key40 still reads as the app's expected value.
+- Existing 200 ms settle delay retained; no changes to key33 or key1.
+
+UNCHANGED
+- ALL FullRes RAW and HDR+ method bodies, 2/3/5 frame selection, fixed black/white levels, DCG profiles, native libraries.
+- FIX2 diagnostic DNG auto-cleanup method, RAW callback, and the cleanup trigger are byte-for-byte unchanged.
+- AndroidManifest.xml, package ID, resources and every other APK entry unchanged.
+
+LIMITATIONS — THIS IS AN EXPERIMENTAL DEVICE TEST, NOT YET STABLE
+- This is a compact implementation, not an exact port of RawR's camera lifecycle owner.
+- It does NOT yet verify key40 with an independent getInfo(40) readback after every set, or confirm camera idle before stale-journal recovery.
+- The alternate close path releases after CameraDevice.close() returns, not a confirmed onClosed callback. This is less conservative than RawR's owner.
+- A stale-state journal contains previous value but not a process-ID check, so do NOT use with another active Vivo/RawR camera app until tested.
+- An earlier code prototype was adapted; on-device verifier, hidden Vivo API behavior, 50 MP resolution, and consecutive capture reliability remain untested.
+- The VIVO_GATE log currently records the value the helper attempted to set, not an independently confirmed HAL readback.
+
+TEST STEPS
+1. Back up your working FIX2 APK and XML configurations/settings first.
+2. Sign this P151H unsigned APK in MT Manager, preserving package com.meitu.xenius135a01. Install as an update if certificate permits; otherwise uninstall the old app after backup and install newly signed APK.
+3. Start the app, check live preview and 50 MP mode. If black screen or VerifyError, immediately revert to FIX2.
+4. Capture one 50 MP 3-frame main-camera photo. Check full 8192x6144 resolution and inspect the actual image (not just JPEG metadata).
+5. Capture one ordinary 50 MP tele photo. Then switch main -> tele -> main and capture again.
+6. Close the camera normally, reopen, capture another photo, and inspect image content.
+7. Only after success try 2F and 5F. Check no remaining RAW50_REQ*.dng files.
+8. Export LADB log after these steps (one command per line, without 'adb shell'):
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|RAW50_REQ|CLEAN|CameraDevice|CameraManager|VerifyError|AndroidRuntime|FATAL EXCEPTION|Fatal signal|CheckPayloadBaseFrameSize|HDR\+ pipeline|ShotLogData' > /sdcard/Download/P151H_KEY40_LOG.txt
+9. Send P151H_KEY40_LOG.txt. A full filtered log is necessary to interpret gate acquisition / restoration and image-processing behavior.
+
+WHAT WE CAN VERIFY FROM THIS ARTIFACT
+- APK ZIP integrity, DEX SHA1/Adler, branch boundaries, try ranges, unchanged nonpatched methods and assets.
+- It cannot prove key40 actually toggles or restores on the device. The gate itself is a global camera service setting.

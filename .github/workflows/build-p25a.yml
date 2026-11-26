@@ -1,0 +1,62 @@
+name: Build Xenius FullRes P25B APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'XENIUS_P25A_FULLRES_50MP_CI_SOURCE.zip'
+      - '.github/workflows/build-p25a.yml'
+      - 'scripts/patch_p25b_orientation.py'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 35 using installed commandline tools
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager
+          SDKMGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -n "$SDKMGR"
+          "$SDKMGR" --version
+          "$SDKMGR" 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract P25A source
+        run: |
+          test -f XENIUS_P25A_FULLRES_50MP_CI_SOURCE.zip
+          mkdir -p xenius-p25a
+          unzip -q XENIUS_P25A_FULLRES_50MP_CI_SOURCE.zip -d xenius-p25a
+          test -f xenius-p25a/settings.gradle
+          test -f xenius-p25a/app/build.gradle
+
+      - name: Apply P25B orientation metadata fix
+        run: python3 scripts/patch_p25b_orientation.py xenius-p25a
+
+      - name: Build debug APK
+        working-directory: xenius-p25a
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XENIUS_P25B_H50_ORIENTATION_DEBUG_APK
+          path: xenius-p25a/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

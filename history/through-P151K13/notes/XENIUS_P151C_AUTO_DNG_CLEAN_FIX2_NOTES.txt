@@ -1,0 +1,22 @@
+XENIUS P151C AUTO DNG CLEAN FIX2 — EXPERIMENTAL (UNSIGNED)
+Package: com.meitu.xenius135a01
+Reference baseline: XENIUS_P151C_5FRAME_OFFLINE_LOGS_SIGNED.apk
+
+FIX1 preserved 50 MP HDR+ but did not remove diagnostic DNGs. Its JPEG-save-message branch appears not to be the reliable trigger for the custom FullRes pipeline.
+
+FIX2 now triggers only in the existing diagnostic export callback, immediately AFTER FileOutputStream.close() for a temporary RAW50_REQ DNG. It calls a separate helper to delete files in this package's getExternalFilesDir(null) whose names start with RAW50_REQ and end with dng. It is NOT triggered by JPEG save: the diagnostic copy is closed and independent of HDR processing, so cleanup can happen earlier. It will not remove files that exist in other package data folders.
+
+The 8192x6144 FullRes acquisition branch, RAW frame submission and ownership, native Google HDR+ merge, JPEG saver, frame settings, key40 and libraries are unmodified relative to P151C. Only the diagnostic log after FileOutputStream.close() is replaced with a cleanup call. A preexisting unused method becomes the cleanup helper, as in FIX1. A log marker `I CLEAN: RAW50_REQ` is emitted when the helper exits (regardless of actual deletions); grep it to verify execution.
+
+VALIDATION: ZIP integrity pass, header DEX SHA1/Adler pass; classes2.dex and all native libraries byte-identical to P151C; classes.dex only 2 method bodies modified. No on-device Android verifier or capture validation available here. Developer certificate absent; sign in MT Manager yourself with a consistent key.
+
+TEST:
+1. Back up XML/settings. Sign FIX2 in MT Manager. Upgrade FIX1 if certificate matches, otherwise uninstall and install.
+2. Confirm app opens; test ONE 3-frame 50 MP capture first. Ensure JPEG correct, then several shots.
+3. In LADB run:
+   logcat -d -v brief | grep -E 'CLEAN|RAW50_REQ' | tail -60
+   find /sdcard/Android/data/com.meitu.xenius135a01/files -maxdepth 1 -type f -name 'RAW50_REQ*.dng' | wc -l
+4. Expected diagnostic event: I CLEAN: RAW50_REQ. Expected DNG count: 0 if the diagnostic exporter has run and helper could delete its files. Without a diagnostic write event, previously existing files can remain.
+5. Stop if camera crashes, frame dimensions change, JPEG missing, or HDR+ behaves differently; restore P151C (or working FIX1).
+
+RISK: Cleanup runs synchronously in the diagnostic callback after its file stream is closed. It does not wait for final JPEG save, but no temporary DNG file is used as native HDR+ input in the inspected P151C code path. Tested only by static code analysis, not on Vivo hardware.

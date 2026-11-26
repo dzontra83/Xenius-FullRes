@@ -1,0 +1,1 @@
+clang --target=aarch64-linux-android29 -O3 -fPIC -ffreestanding -fno-builtin -nostdlib -shared -fuse-ld=lld -fvisibility=hidden -Wl,-soname,libtbin.so -Wl,-z,now -Wl,--hash-style=both -s -o libtbin.so tbin.c

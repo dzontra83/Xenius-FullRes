@@ -1,0 +1,58 @@
+name: Build Xenius FullRes P27 F200 BlackLevel 64 DNG APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'XENIUS_P27_FULLRES_50_200MP_SOURCE.zip'
+      - '.github/workflows/build-p27.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 35 using installed commandline tools
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager
+          SDKMGR=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          test -n "$SDKMGR"
+          "$SDKMGR" --version
+          "$SDKMGR" 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract P27 source
+        run: |
+          test -f XENIUS_P27_FULLRES_50_200MP_SOURCE.zip
+          mkdir -p xenius-p27
+          unzip -q XENIUS_P27_FULLRES_50_200MP_SOURCE.zip -d xenius-p27
+          test -f xenius-p27/settings.gradle
+          test -f xenius-p27/app/build.gradle
+
+      - name: Build debug APK
+        working-directory: xenius-p27
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XENIUS_P27_F50_F200_BLACK64_DEBUG_APK
+          path: xenius-p27/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

@@ -1,0 +1,48 @@
+XENIUS P151H FIX4 — Key40 Lifecycle Experiment
+Date: 2026-11-18
+Package: com.meitu.xenius135a01
+File: XENIUS_P151H_FIX4_KEY40_LIFECYCLE_UNSIGNED.apk
+Unsigned: user must sign with MT Manager; back up settings before uninstalling.
+
+Latest user log: LMC8.3_VIVO_V2547A(PD2547)_2026-11-18(7).prop
+Last recorded time: 2026-11-18 19:17:37 Europe/Belgrade.
+The installed classes2.dex CRC32 = 700103847, exactly P151H FIX3.
+Android ART VerifyError at LMC/c2a.getC2apiPref code unit 0x24A (586):
+  copy-cat1 v9<-v0 type=Reference: java.lang.Class
+
+Root cause:
+  At CU586, the P151H journal-cleanup code uses move v9,v0 (opcode 0x0901)
+  to save a java.lang.Class reference. Dalvik requires move-object (0x0907).
+  At CU618, the inverse instruction move v0,v9 (opcode 0x9001) must also
+  be move-object (0x9007) to restore the class reference.
+
+FIX4 modifications versus FIX3:
+  classes2.dex / LMC/c2a.getC2apiPref:
+    CU586 0x0901 -> 0x0907
+    CU618 0x9001 -> 0x9007
+  Only those 2 executable bytes changed; DEX signature/checksum updated.
+  No other APK member data changed. DEX1 and FIX2's debug DNG cleanup and
+  native HDR+ 8192x6144 pipeline remain byte-for-byte identical to FIX3.
+  FIX4 classes2.dex CRC32 decimal = 3698063092.
+  FIX4 SHA256 unsigned APK = 4f5c0629bc702330c11b04a46ecafa299920a5bd551c4e3d4bc61b86bebbcdd6
+
+Offline verification:
+  ZIP CRC/integrity test: pass.
+  DEX SHA1 and Adler32: pass.
+  Dalvik instruction boundaries/branches/try regions: pass.
+  Exactly 2 modified non-header DEX bytes between FIX3 and FIX4: pass.
+  ART runtime verifier: NOT AVAILABLE; cannot guarantee app launch or behavior.
+
+Suggested cautious validation:
+1. Keep a backed-up copy of the functioning original P151C AUTO DNG CLEAN FIX2.
+2. Sign FIX4 in MT Manager; check the classes2.dex CRC above (signing should not modify DEX).
+3. Start the app. If startup works, take only one 50MP 3F main camera shot.
+4. Check full photo resolution and contents, and whether RAW50_REQ debug DNG files remain absent.
+5. Close/reopen once, then test ordinary tele, and finally 2F/5F.
+6. Export log (from LADB):
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|key40|VerifyError|AndroidRuntime|FATAL EXCEPTION|RAW50|CLEAN|ShotLogData' > /sdcard/Download/P151H_FIX4_LOG.txt
+
+Key warning: P151H code is still experimental. It does not fully reproduce RawR's safe
+camera-idle crash recovery and device-close callback ownership, and no Android verifier
+has certified this APK. If the next build fails, pause these key40 changes and return
+FIX2 rather than continuing unbounded register patching.

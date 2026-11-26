@@ -1,0 +1,47 @@
+XENIUS P151J TEST1 — ACTIVITY-BASED EARLY KEY40
+2026-11-18 · Vivo X300 Ultra · Xenius LMC8.3 50MP HDR+
+Package: com.meitu.xenius135a01 (same as P151C/FIX2)
+Unsigned APK: sign using MT Manager. Experimental: no Android-device runtime test.
+
+BASELINE
+XENIUS_P151C_AUTO_DNG_CLEAN_FIX2_UNSIGNED.apk (confirmed 2/3/5 HDR+ native merges and automatic removal of RAW50_REQ diagnostic DNGs).
+
+SCOPE OF PATCH
+- In CameraApp.<init>, replace the original null-argument getC2apiPref() early vendor gate call with three NOP instruction units.
+- In the actual camera activity's onCreate() method (CameraActivity, method_id 15526), insert const/4 v0,0 + invoke-static {v0},LMC/c2a.getC2apiPref() at method entry, ahead of the original camera activity initialization.
+- Copy this 826-CU method body to a new 830-CU DEX code item, adjusting its sole try range and three handler addresses by +4 CU. Update the class_data code_off to reference the new body. Preserve original relative instructions/branches/payloads; all preexisting activity instructions remain in the same relative order.
+- This avoids calling the key40 gate merely because another process (such as the crash-report process) constructs CameraApp; only the real CameraActivity calls it. Android initializes Application before Activity, so context should be available to the preexisting helper.
+- LMC/c2a.getC2apiPref in classes2.dex is byte-for-byte identical to P151C FIX2. Therefore, key40 uses ORIGINAL P151C enable/restore logic (Aemodef marker, Lksn.onClosed callback). No P151H/P151I journal/refcount logic is included.
+- Larb alternate Camera2 callback's missing onClosed is NOT addressed. THIS IS NOT A COMPLETE LIFECYCLE REWRITE.
+
+NOT MODIFIED
+- All other preexisting method code items including RAW50 callback, native HDR+ engine, capture frame selection, ImageReader, Image.close(), FIX2 CLEAN routine, and Xenius request helper.
+- classes2.dex, all SO libraries, resources, AndroidManifest.xml, and any D35/D85 settings.
+
+RISK / LIMITS
+- Old P151C gate helper's process-local previous-value marker can still be stale following a crash. It has no durable journal/readback verification. If app crashes after key40 activation, key40 may remain globally enabled; use standalone Vivo Key40 Switch to read/reset with all cameras idle.
+- The alternate Larb close path lacks a matching CameraDevice.onClosed callback, and may leave key40 enabled. We need device-log evidence to determine whether this path matters during real fullres capture.
+- No Android ART runtime verifier or camera device is available here; passing DEX structure does not prove that the first/second shots or key restore work.
+- This is a targeted diagnosis/fix candidate for gate activation in the wrong process, not a claim the key40 close problem is solved.
+
+STATIC CHECKS
+- Source APK ZIP integrity passed. New APK ZIP integrity passed.
+- DEX SHA1 and Adler32 verified; class_data offsets and map data re-parsed; all method code_off references unchanged except CameraActivity.onCreate; method IDs unchanged.
+- CameraActivity.onCreate code item: 826 -> 830 code units; try start 753 -> 757, catch handler addresses +4, no branch target changes relative to original instructions.
+- CameraApp.<init>: 3-CU early activation removed. All other executable methods identical.
+- classes2.dex CRC32 = 1420333447 (same as working FIX2)
+- classes.dex CRC32 = 2233816420
+- Native libraries: 20, byte-identical to working FIX2.
+- SHA256 of unsigned APK: 797df4af9033e73df0afd1fe59cc0f42feb16d58c0b7f4b9a453fb62b43c17e1
+
+CONTROLLED TEST
+1. Back up P151C AUTO DNG CLEAN FIX2 APK and user XML/profile data.
+2. Fully close/force-stop Xenius; use separate Vivo Key40 Switch OFF then READ -> 0.
+3. Sign P151J in MT Manager, install (uninstall previous package if signing certificate differs).
+4. Clear LADB logcat: logcat -c
+5. Launch Xenius, capture TWO consecutive 50MP 3F photographs; verify both JPEG contents are truly 8192x6144. Optionally test 2F and 5F only if two consecutive 3F work.
+6. Close Xenius normally (allow teardown). WITHOUT pressing ON/OFF, use Vivo Key40 Switch READ. Desired value 0. Try stock camera WITHOUT using switch.
+7. If issue: collect before resetting:
+   logcat -d -b all -v threadtime > /sdcard/Download/P151J_TEST1_FULL.txt
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|RAW50|CLEAN|CameraDevice|CameraManager|CameraService|CheckPayloadBaseFrameSize|VerifyError|AndroidRuntime|FATAL EXCEPTION|IllegalStateException' > /sdcard/Download/P151J_TEST1_FOCUS.txt
+8. If key40 remains 1, force-stop Xenius; use switch OFF only when camera devices are idle; revert to FIX2 for normal use, and report beginning/ending key40 values, first/second shot behavior, and logs.

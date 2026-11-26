@@ -1,0 +1,40 @@
+XENIUS P151H FIX1 – key40 VerifyError repair
+Date: 2026-11-18
+Package: com.meitu.xenius135a01
+APK: XENIUS_P151H_FIX1_KEY40_LIFECYCLE_UNSIGNED.apk
+
+WHY
+The newest entry (18:44:47) in the user-supplied crash report, despite older crash history also contained within that file, reports:
+  java.lang.VerifyError: Verifier rejected class MC.c2a
+  getC2apiPref(leo): [0x1B0] 'this' argument Reference java.lang.Object
+  not instance of Reference: java.lang.Class
+This corresponds to PC 0x1B0=432 in classes2.dex. The key40 SharedPreferences journal appended in P151H reuses Dalvik v0 for an Android Application and SharedPreferences object, whereas original code at CU432 invokes Class.getMethod on v0.
+
+FIX
+Based on FIX2, retain P151H's experimental key40 features but protect the class reference through journal operations:
+  CU497: move-object v9, v0
+  CU552: move-object v0, v9
+  CU553: goto/16 CU408
+All early returns from the journal where v0 has been overwritten are routed via this restore path. Release branch where journal does not run jumps to CU410 directly. No other camera code changes.
+
+VERIFICATION
+  - Android package manifest remains unchanged
+  - classes.dex exact same as P151H, including original FIX2 cleanup and RAW/HDR+ processing
+  - classes2.dex modified solely in getC2apiPref and DEX structural bookkeeping
+  - Native .so files same as P151H and FIX2
+  - ZIP integrity pass, DEX header Adler32/SHA1 pass
+  - Dalvik instructions, branches and try regions statically parsed
+  - INVOKE Class.getMethod at CU432 is expected to receive restored Class-typed v0
+  - Not run through Android ART verifier or tested on Vivo X300 Ultra
+
+IMPORTANT
+This is NOT proof of proper key40 behavior, recovery or successful 50MP captures. P151C AUTO DNG CLEAN FIX2 remains working baseline.
+
+TEST
+1. Keep FIX2 APK and XML backup.
+2. Sign unsigned APK with MT Manager and install under same package name (uninstall older app if certificate does not match).
+3. Open Xenius and try 50MP 3F main, ordinary tele, close/reopen. Ensure full image across all pixels and no RAW50_REQ DNG files remain.
+4. Before tests run in LADB (no adb shell prefix): logcat -c
+5. After tests run:
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|key40|RAW50|CLEAN|VerifyError|AndroidRuntime|FATAL EXCEPTION|CheckPayloadBaseFrameSize|HDR\+ pipeline' > /sdcard/Download/P151H_FIX1_KEY40_LOG.txt
+6. If any crash, blank/quarter frame or failure, revert to working FIX2 and send log.

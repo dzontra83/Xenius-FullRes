@@ -1,0 +1,42 @@
+P151K2 — FORCED KEY40 OFF AFTER PRIMARY CAMERA DEVICE CLOSE
+2026-11-18
+
+USER TEST / LOG
+- P151K1 first complete cycle passed all six user checks, including key40 restoration and stock camera.
+- Later reopen took photos but left key40 at 1 when Xenius exited.
+- In P151K1_TEST.txt, process 4461:
+  22:54:15.686 RESOLUTION_SWITCH onResume
+  22:54:22.438 native HDR+ merged 3/3, aborted=false
+  22:54:29.137 native HDR+ merged 3/3, aborted=false
+  22:54:34.094 Lksn.onClosed callback
+  22:54:34.741 RESOLUTION_SWITCH onStop
+  22:54:39.806 RESOLUTION_SWITCH onResume
+  22:54:41.823 RESOLUTION_SWITCH onStop
+  22:54:41.927 Lksn.onClosed callback
+- No VIVO_GATE write logs in captured P151K1 log, so the release helper likely skipped its write after stale ownership; exact key40 state is independently reported by user, not logged.
+- 2 nonfatal RAW50_REQ 'Image is already closed' errors present (under investigation separately).
+
+CAUSE / CODE
+P151K1's helper LMC/c2a.getC2apiPref(Lleo;) uses null argument for acquire.
+An Lleo with null CaptureRequest.Builder is passed by Lksn.onClosed; the helper's CU20 reflection checks the null builder and branches to release code CU345. In K1 CU347 skips release if static Aemodef==0. The K1 re-acquisition guard at CU408 also skips new acquisition when actual key40 already reads nonzero, without necessarily recording ownership. Consequently, the release callback may occur while the process marker is zero and no write is emitted.
+
+PATCH
+From XENIUS_P151K1_KEY40_REACQUIRE_GUARD_UNSIGNED.apk; in classes2.dex method 646 LMC/c2a.getC2apiPref:
+- CU347-348: replace if-eqz Aemodef -> skip with 2 NOPs. No longer skip release when owner marker is zero.
+- CU415-418: replace read Aemodef and subtract1 with const/4 v10,0 + NOP padding. Release setValue(40,0) unconditionally.
+This is an intentional OFF-after-close policy, NOT restoring an arbitrary value previously held by another app. The existing Lksn.onClosed callback remains intact, and only its gate helper behavior changes.
+
+SCOPE / SAFETY
+- FullRes HDR+ native libs, 2F/3F/5F selection, temporary DNG cleanup, all other methods, resources unchanged from K1.
+- Not the complete RES 12MP/50MP toggle. Alternate Camera2 code paths that do not emit the instrumented Lksn.onClosed callback are not covered.
+- This may turn key40 OFF when camera devices close during camera/lens switching, so we must test reopening and rapid transitions, not just a single exit.
+- Main log will say VIVO_GATE:0 after close if setValue called; this is the *requested* value, not a verified hardware getInfo readback. Check via independent ON/OFF/READ utility.
+- Signed file uses a NEW development signing certificate; unless that matches the currently installed APK cert (usually it does NOT), Android requires uninstall before direct installation. Back up XML/preferences before uninstall. Alternatively sign the unsigned build in MT Manager with the SAME key as existing build for in-place upgrade. A standalone cryptographic APK v2 verifier was used; platform apksigner was not available, and the APK has not been run on a Vivo device.
+
+PHONE TEST
+1. Save XML profile and preferences; close Xenius, set key40 OFF, READ 0 when camera idle.
+2. Install K2; launch, take two 3F shots; close and READ 0; check stock Vivo camera.
+3. Return to Xenius, take two more 3F shots; close, READ 0; check stock camera again.
+4. If possible test 2F,5F, and leave/reopen while still in Xenius. Do not change key40 manually during test.
+5. On failure immediately dump `logcat -d -b main,system,crash -v threadtime > /sdcard/Download/P151K2_TEST.txt` before touching the switch.
+Expected: RESOLUTION_SWITCH onStop or onClosed (order can vary), onClosed: onClosed, VIVO_GATE: 0, external READ=0.

@@ -1,0 +1,60 @@
+XENIUS P151H FIX5B — KEY40 IDEMPOTENT ACQUIRE TEST
+Vivo X300 Ultra / Xenius LMC 8.3 · 2026-11-18
+Package com.meitu.xenius135a01 · APK unsigned (sign with MT Manager)
+
+PURPOSE
+FIX5A removed getC2apiPref(null) from Llel.h and user reported shutter yielded no photo.
+FIX5B restores the byte-for-byte working FIX4 classes.dex, including the request-time key40 call.
+FIX5B makes the existing key40 helper treat repeated acquired-state calls as idempotent:
+ in classes2.dex LMC/c2a.getC2apiPref at CU340
+ existing if-nez v4 -> CU555 (increment gate counter and return)
+ now if-nez v4 -> CU559 (return directly; NO count increment).
+Exactly one non-header executable byte differs from FIX4 (branch delta 215 -> 219).
+Original cold acquisition and single final restore path are unchanged.
+
+WHY THIS MIGHT HELP
+Request-time calls are now available again to activate key40 for the FullRes shot,
+but they cannot inflate the gate counter beyond 1 once acquired.
+Therefore a final device close can trigger the previous-value restore instead of leaving
+key40=1 solely due to an unbalanced count.
+
+NOT A COMPLETE LIFECYCLE REWRITE
+- The alternate Larb path still releases immediately after CameraDevice.close() returns.
+- Multiple overlapping camera-device opens are NOT safely reference counted by this patch;
+  releasing one could restore while another is open. This must be solved before declaring final.
+- The getInfo(40) readback, camera-idle safe recovery, and onClosed handling are not finished.
+- Offline DEX checks do not prove Android ART acceptance or actual camera correctness.
+- The gate is global; do not use stock camera simultaneously with Xenius.
+
+WHAT IS UNCHANGED
+- classes.dex is byte-identical to working P151H FIX4: RAW capture, HDR+, 2/3/5
+  selection, automatic DNG cleanup, camera open/close logic and capture request call.
+- All native libs and resources identical to FIX4.
+- Same package name as original; unsigned for signing with MT Manager.
+
+TEST
+1. Save known-good P151C AUTO DNG CLEAN FIX2 APK + working XML settings.
+2. Force-stop Xenius. With no camera running, use your previously tested one-button key40
+   reset app once to establish value=0 before this test.
+3. Sign and install P151H FIX5B.
+4. Clear log: logcat -c
+5. Open Xenius, take 50MP 3-frame shot, confirm JPEG is really saved and covers whole frame.
+6. Close Xenius normally, wait until camera is released. WITHOUT the reset app,
+   open stock Vivo camera. Success is the critical acceptance test.
+7. Export gate log:
+   logcat -d -b all -v threadtime | grep -Ei 'VIVO_GATE|VivoCameraManager|CLEAN|VerifyError|AndroidRuntime|FATAL EXCEPTION|CameraDevice|CameraService' > /sdcard/Download/P151H_FIX5B_GATE.txt
+8. If shutter fails again, export also full log before resetting:
+   logcat -d -b all -v threadtime > /sdcard/Download/P151H_FIX5B_FULL_LOG.txt
+
+Expected: VIVO_GATE:1 when opening followed by VIVO_GATE:0 after final close.
+These logs display requested values, not independent vendor manager readbacks. If stock
+camera still fails, force-stop Xenius then use the one-button reset utility and revert
+to the known-good AUTO DNG CLEAN FIX2.
+
+INTEGRITY
+ZIP OK; classes.dex identical to FIX4; classes2.dex SHA1 and Adler32 valid;
+new branch destination verified to be CU559 return-object;
+static opcode boundaries, branch targets and try ranges pass;
+actual on-device startup/capture/restoration not yet verified.
+classes2.dex CRC32: 1400271208
+APK SHA256: 0d862ec1c08d368a5af030950e0ee30bb58c998148dffbb1d7ca8724abcf812b

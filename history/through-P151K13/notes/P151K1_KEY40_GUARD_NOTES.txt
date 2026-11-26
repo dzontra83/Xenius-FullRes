@@ -1,0 +1,53 @@
+XENIUS P151K1 — KEY40 RE-ACQUIRE GUARD / RES FOUNDATION
+2026-11-18
+
+BASELINE
+XENIUS_P151K0_RES_GATE_FOUNDATION_UNSIGNED.apk
+Package com.meitu.xenius135a01, unsigned (sign with MT Manager), FullRes 50MP only.
+
+ON-DEVICE EVIDENCE IN P151K0_FOUNDATION.txt
+22:42:51.512 RESOLUTION_SWITCH onResume
+22:42:51.690 / .712 VIVO_GATE 1 twice, on different threads
+22:42:59.735 RAW50 native HDR+ 3/3 merged, aborted=false
+22:43:06.650 RAW50 native HDR+ 3/3 merged, aborted=false
+22:43:08.043 RESOLUTION_SWITCH onStop
+22:43:08.115 onClosed callback invoked
+22:43:08.326 VIVO_GATE 1 after release helper's 200ms sleep
+Two nonfatal RAW50 Image is already closed traces were recorded, one during each shot. They did not prevent the two native 3/3 merges.
+
+ROOT-CAUSE CANDIDATE
+Original classes2.dex LMC/c2a.getC2apiPref uses static Aemodef = getInfo(40) + 1
+on successful acquisition, and release sets key40 = Aemodef - 1. In P151J TEST2 /
+P151K0 the top-level active-marker branch was changed to recheck the real vendor
+value, but the check at CU408 was 0x043a (if-ltz v4), which only skips
+negative vendor values, not key40==1. A repeat acquire when key40 already 1
+therefore calls setValue(40,1) and overwrites Aemodef=2, causing a later
+release to restore 1.  Two closely spaced startup VIVO_GATE:1 requests in the
+log are consistent with this, but the log does not contain direct Aemodef
+readback, so treat this as a strong code-based cause candidate.
+
+MINIMAL PATCH
+In `classes2.dex`, method LMC/c2a.getC2apiPref, CU408:
+   OLD 0x043a (if-ltz v4, +77 code units)
+   NEW 0x0439 (if-nez v4, +77 code units)
+When getInfo(40)==1, skip repeated acquire and preserve Aemodef original value.
+When getInfo(40)==0, allow acquisition/reacquisition. The release path branches
+around CU408 and is byte-identical to P151K0.
+
+Only one executable opcode byte changed from P151K0, plus mandatory DEX
+SHA-1 + Adler32 header updates. All native libs, classes.dex (including
+RESOLUTION_SWITCH onResume/onStop/onClosed markers), RAW50/HDR+/DNG cleanup,
+resources and manifest preserved byte-identically.
+
+EXPECTED TEST (NOT VERIFIED ON DEVICE)
+1. Force-stop Xenius; set key40=0 via standalone switch when camera idle.
+2. Sign/install P151K1, open Xenius, 2 consecutive 50 MP / 3F shots.
+3. Close Xenius. Expected onClosed followed by VIVO_GATE:0, and READ key40=0.
+4. Stock Vivo camera should open without manual resetting.
+5. Reopen Xenius; repeat. Optional 2F and 5F shots.
+6. On failure save main+system+crash log immediately before resetting key40.
+
+LIMITS
+P151K1 is a key40 lifecycle hotfix / diagnostic foundation, not a completed
+RES-button 12/50 MP mode switch. Still requires integration with camera opening
+recipes. No Android ART/vivo hardware runtime or signing verification available.
