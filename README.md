@@ -5,15 +5,15 @@ photos from the native quad sensor mode, our own remosaic and burst merge in fro
 
 > **Continuing in a new chat?** Read [`HANDOFF.md`](HANDOFF.md) first.
 
-## Current build: P320 (2026-11-27)
+## Current build: P330 (2026-11-27)
 
-`rebuild/P320/build_p320.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
-[`rebuild/P320/README.md`](rebuild/P320/README.md).
+`rebuild/P330/build_p330.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
+[`rebuild/P330/README.md`](rebuild/P330/README.md).
 
 ```bash
-cd rebuild/P320
+cd rebuild/P330
 export PYTHONPATH=../P149A:../P149B:../P163:../../tools/dex
-OISB=off SETTLE=200 python3 build_p320.py XENIUS_P174B_UNSIGNED.apk XENIUS_P320_UNSIGNED.apk
+OISB=off SETTLE=200 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330_UNSIGNED.apk
 ```
 Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 
@@ -35,8 +35,8 @@ Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 ## Credits
 
 - **Ed (RawR)** — with his permission:
-  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P320/quad.c`), GPL-3.0
-    (`rebuild/P320/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
+  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P330/quad.c`), GPL-3.0
+    (`rebuild/P330/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
   - the **tone**: the RAWR NTRL tone curve values used for the LMC Manual curve;
   - ideas: the shutter progress ring, darker exposure in dim scenes (night key), burst focus lock and noise handling.
 - **Ray** — the idea of capping handheld frames at 1/50 s while ISO stays low (implementation written here).

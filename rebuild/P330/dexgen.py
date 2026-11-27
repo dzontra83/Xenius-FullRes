@@ -359,6 +359,7 @@ def build_classes3():
     a.cs(1, S('TBQ')); a.inv(0x72, mrem, [5, 1])                                      # new shot: no stale paced queue
     a.cs(1, S('TBramp')); a.inv(0x72, mrem, [5, 1])                                   # P287: no stale warm-up ramp
     a.cs(1, S('nightS')); a.inv(0x72, mrem, [5, 1])                                   # P261: new shot: no night scale
+    for k_ in ('VHs', 'VHe', 'VHi', 'VHt'): a.cs(1, S(k_)); a.inv(0x72, mrem, [5, 1])   # P321: no stale headroom
     if __import__('os').environ.get('AEMETER', '1') == '1':
         MK = float(__import__('os').environ.get('AEMERGEK', '1.0'))
         FLT2 = g.T('Ljava/lang/Float;')
@@ -683,6 +684,67 @@ def build_classes3():
     a.inv(0x71, ivo, [4]); a.mro(4)
     sb_new(6); sb_s(6, 7, 'quad still request iso='); a.inv(0x6e, sbo, [6, 2]); sb_s(6, 7, ' mode='); a.inv(0x6e, sbo, [6, 4]); log_sb(6)
     a.cs(1, S('quadOn')); a.inv(0x72, mput, [5, 1, 4])
+    VHS = int(__import__('os').environ.get('VHS', '180'))
+    if 0 < VHS < 256:
+        # P321 virtual headroom (ER 50 / 25 MP): the merge output is scaled by VHS/256 on top of any night / AE scale
+        # (nightS), and GCam is told the frames carry VHS/256 of their digital gain (ohv.k, via compare(Lljm)), so it
+        # lifts them back: midtones unchanged, clipped highlights get 256/VHS of room above the old white
+        LNG_ = 'Ljava/lang/Long;'
+        a.cs(1, S('nightS')); a.inv(0x72, mget, [5, 1]); a.mro(3); a.iof(2, 3, tINT); a.b21(0x38, 2, 'vh1')
+        a.t21(0x1f, 3, tINT); a.inv(0x6e, ivl, [3]); a.mr(6); a.go('vh2')
+        a.L('vh1'); a.c16(6, 256)
+        a.L('vh2'); a.raw(0xd2 | 6 << 8 | 6 << 12, VHS); a.raw(0xd3 | 6 << 8 | 6 << 12, 256)
+        a.inv(0x71, ivo, [6]); a.mro(3); a.cs(1, S('nightS')); a.inv(0x72, mput, [5, 1, 3])
+        VHG = int(__import__('os').environ.get('VHG', '180'))   # P324: gain told to GCam (it already lifts a darker merge partly itself)
+        VHGD = int(__import__('os').environ.get('VHGD', '440'))  # P325: dark scenes (night key s = 1): less lift
+        FLT_v = g.T('Ljava/lang/Float;')
+        a.cs(1, S('VHk')); a.inv(0x72, mget, [5, 1]); a.mro(3); a.iof(2, 3, FLT_v); a.b21(0x38, 2, 'vk0')
+        a.t21(0x1f, 3, FLT_v); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [3]); a.mr(2)
+        fbits = lambda f: struct.unpack('<I', struct.pack('<f', f))[0]
+        k_ = fbits(float(VHGD - VHG)); a.raw(0x14 | 6 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc8 | 2 << 8 | 6 << 12)
+        k_ = fbits(float(VHG) + 0.5); a.raw(0x14 | 6 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc6 | 2 << 8 | 6 << 12)
+        a.raw(0x87 | 6 << 8 | 2 << 12); a.go('vk1')                                           # v6 = VHG + (VHGD - VHG) s
+        a.L('vk0'); a.c16(6, VHG)
+        a.L('vk1')
+        # P330: daylight (EV100 VHEV0 .. VHEV0 + 3) gets up to VHBR EV more lift (lower reported gain), lit rooms unchanged
+        VHEV0 = float(__import__('os').environ.get('VHEV0', '9')); VHBR = float(__import__('os').environ.get('VHBR', '0.3'))
+        if VHBR > 0:
+            a.cs(1, S('VHev')); a.inv(0x72, mget, [5, 1]); a.mro(3); a.iof(2, 3, FLT_v); a.b21(0x38, 2, 'vb9')
+            a.t21(0x1f, 3, FLT_v); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [3]); a.mr(2)   # v2 = EV100
+            k_ = fbits(-VHEV0); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc6 | 2 << 8 | 3 << 12)
+            k_ = fbits(1.0 / 3); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc8 | 2 << 8 | 3 << 12)  # t = (ev - EV0) / 3
+            k_ = fbits(0.0); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0x2d | 1 << 8, 2 | 3 << 8)
+            a.b21(0x3d, 1, 'vb9')                                                                 # t <= 0: unchanged
+            k_ = fbits(1.0); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0x2d | 1 << 8, 2 | 3 << 8)
+            a.b21(0x3a, 1, 'vb1'); a.raw(0x01 | 2 << 8 | 3 << 12)                                # min(t, 1)
+            a.L('vb1')
+            k_ = fbits(-(1.0 - 2 ** -VHBR)); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc8 | 2 << 8 | 3 << 12)
+            k_ = fbits(1.0); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc6 | 2 << 8 | 3 << 12)   # f = 1 - c t
+            a.raw(0x82 | 3 << 8 | 6 << 12); a.raw(0xc8 | 3 << 8 | 2 << 12); a.raw(0x87 | 6 << 8 | 3 << 12)  # gain x f
+            a.L('vb9')
+        sb_new(3); sb_s(3, 1, 'virtual headroom gain256='); a.inv(0x6e, sbI, [3, 6]); log_sb(3)
+        a.inv(0x71, ivo, [6]); a.mro(3); a.cs(1, S('VHs')); a.inv(0x72, mput, [5, 1, 3])
+        VHSD = int(__import__('os').environ.get('VHSD', '150'))  # P326: dark scenes: merge output darker (not lifted back)
+        if VHSD < VHS:
+            a.cs(1, S('VHk')); a.inv(0x72, mget, [5, 1]); a.mro(3); a.iof(2, 3, FLT_v); a.b21(0x38, 2, 'vd9')
+            a.t21(0x1f, 3, FLT_v); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [3]); a.mr(2)
+            k_ = fbits(-(1.0 - VHSD / VHS)); a.raw(0x14 | 6 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc8 | 2 << 8 | 6 << 12)
+            k_ = fbits(1.0); a.raw(0x14 | 6 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc6 | 2 << 8 | 6 << 12)   # v2 = 1 - c s
+            a.cs(1, S('nightS')); a.inv(0x72, mget, [5, 1]); a.mro(3); a.t21(0x1f, 3, tINT); a.inv(0x6e, ivl, [3]); a.mr(6)
+            a.c16(1, VHS - 10); a.b22(0x34, 6, 1, 'vd9')                                         # night / AE scale already darkens: skip
+            a.raw(0x82 | 6 << 8 | 6 << 12); a.raw(0xc8 | 6 << 8 | 2 << 12); a.raw(0x87 | 6 << 8 | 6 << 12)
+            a.inv(0x71, ivo, [6]); a.mro(3); a.cs(1, S('nightS')); a.inv(0x72, mput, [5, 1, 3])
+            sb_new(3); sb_s(3, 1, 'virtual headroom merge s256='); a.inv(0x6e, sbI, [3, 6]); log_sb(3)
+            a.L('vd9')
+        a.raw(0x62 | 1 << 8, g.Fd('Landroid/hardware/camera2/CaptureRequest;', 'SENSOR_EXPOSURE_TIME', RKEY))
+        a.inv(0x6e, g.M(BLD, 'get', '(' + RKEY + ')' + OBJ), [12, 1]); a.mro(3)
+        a.iof(2, 3, g.T(LNG_)); a.b21(0x38, 2, 'vh3'); a.cs(1, S('VHe')); a.inv(0x72, mput, [5, 1, 3])
+        a.L('vh3')
+        a.raw(0x62 | 1 << 8, g.Fd('Landroid/hardware/camera2/CaptureRequest;', 'SENSOR_SENSITIVITY', RKEY))
+        a.inv(0x6e, g.M(BLD, 'get', '(' + RKEY + ')' + OBJ), [12, 1]); a.mro(6); a.cs(1, S('VHi')); a.inv(0x72, mput, [5, 1, 6])
+        a.inv(0x71, g.M('Ljava/lang/System;', 'currentTimeMillis', '()J'), []); a.mrw(6)
+        a.inv(0x71, g.M(LNG_, 'valueOf', '(J)' + LNG_), [6, 7]); a.mro(6); a.cs(1, S('VHt')); a.inv(0x72, mput, [5, 1, 6])
+        sb_new(6); sb_s(6, 7, 'virtual headroom vh256=%d exp=' % VHS); a.inv(0x6e, sbo, [6, 3]); log_sb(6)
     if PVW:
         # PVW: the burst frames also go to the viewfinder's surfaces (the preview request Llei last completed, stored by
         # build M1 under the CaptureRequest class key), so the preview keeps moving during the 50 MP burst
@@ -1312,6 +1374,7 @@ def build_classes3():
     a = A()
     a.L('t0')
     a.iof(0, 11, g.T('Ljava/lang/Float;')); a.b21(0x39, 0, 'isflt')                           # P285: night key
+    a.iof(0, 11, g.T('Lljm;')); a.b21(0x39, 0, 'isljm')                                        # P321: frame gain factor
     a.iof(0, 11, tINT); a.b21(0x39, 0, 'isint')
     SDF = 'Ljava/text/SimpleDateFormat;'
     a.iof(0, 11, g.T(SDF)); a.b21(0x39, 0, 'issdf')
@@ -1358,7 +1421,7 @@ def build_classes3():
     # P301: HDR ratio cap for this scene, same smoothstep: HDRCAP (1.5) in bright light .. HDRCAPD (3.0) in the dark, so
     #       GCam may lift shadows locally (subject in a dim room) instead of us brightening the whole frame (wall blown).
     #       Read by the LiveHdrMetadata hook in classes.dex (props key = an existing classes.dex string).
-    HB = float(os.environ.get('HDRCAP', '1.5')); HD = float(os.environ.get('HDRCAPD', '3.5'))
+    HB = float(os.environ.get('HDRCAP', '1.5')); HD = float(os.environ.get('HDRCAPD', '1.5'))
     cf(5, HD - HB); a.raw(0xc8 | 5 << 8 | 4 << 12)                                             # v5 = (HD - HB) s
     if os.environ.get('AEMETER', '1') == '1':
         # P312: the meter's median term also scales the dim-scene shadow lift: k = 1 + AEmed x AECAPK (0..1); a room that is
@@ -1383,6 +1446,9 @@ def build_classes3():
     a.cs(7, S('LiveHdrMetadata_manual_ec_short_set')); a.inv(0x72, mput, [6, 7, 5])
     AEM_ = os.environ.get('AEMETER', '1') == '1'
     if AEM_: a.raw(0x01 | 9 << 8 | 4 << 12)                                                  # v9 = s
+    # P325: night-key darkness s (0 bright .. 1 dark) for the virtual headroom gain (quad request reads 'VHk')
+    a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [4]); a.mro(5); a.cs(7, S('VHk')); a.inv(0x72, mput, [6, 7, 5])
+    a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [1]); a.mro(5); a.cs(7, S('VHev')); a.inv(0x72, mput, [6, 7, 5])   # P330: EV100
     cf(2, NB - ND); a.raw(0xc8 | 4 << 8 | 2 << 12); cf(2, -NB); a.raw(0xc6 | 4 << 8 | 2 << 12)   # v4 = off = -NB + (NB-ND) s
     if os.environ.get('AEMETER', '1') == '1':
         # P311 own AE: extra = min(AEmed x s, min(0, AEgrd - off)); off += extra; off >= AEFLOOR. s = smoothstep (v10 copy)
@@ -1405,6 +1471,56 @@ def build_classes3():
     sb_s(8, 9, ' cap='); a.inv(0x71, getp, []); a.mro(5); a.cs(9, S('LiveHdrMetadata_max_hdr_ratio_override_set')); a.inv(0x72, mget, [5, 9]); a.mro(5); a.inv(0x6e, sbo, [8, 5]); log_sb(8)
     a.raw(0xc6 | 0 << 8 | 4 << 12)                                                             # ev += off
     a.L('fret'); cf(2, 1000.0); a.raw(0xc8 | 0 << 8 | 2 << 12); a.raw(0x87 | 0 << 8 | 0 << 12); a.raw(0x0f | 0 << 8)
+    a.go('vhskip')
+    # ---- P321: compare(Lljm frame metadata, null) from GCam ohv.k before FrameMetadata.applied_digital_gain_set:
+    #      returns the gain factor x256 for our 50 / 25 MP burst frames (frame duration >= 60 ms and exposure within 1 %
+    #      of the burst's, while 'VHs' is set), else 256 ----
+    if True:
+        LNG_ = 'Ljava/lang/Long;'; tLNG_ = g.T(LNG_); lngv_ = g.M(LNG_, 'longValue', '()J')
+        CR_ = 'Landroid/hardware/camera2/CaptureResult;'; KEY_ = 'Landroid/hardware/camera2/CaptureResult$Key;'
+        ld_ = g.M('Lljm;', 'd', '(' + KEY_ + ')' + OBJ)
+        a.L('isljm')
+        a.inv(0x71, getp, []); a.mro(4)
+        a.cs(5, S('VHs')); a.inv(0x72, mget, [4, 5]); a.mro(6); a.iof(7, 6, tINT); a.b21(0x38, 7, 'vhn')
+        a.cs(5, S('VHe')); a.inv(0x72, mget, [4, 5]); a.mro(7); a.iof(8, 7, tLNG_); a.b21(0x38, 8, 'vhn')
+        a.t21(0x1f, 7, tLNG_); a.inv(0x6e, lngv_, [7]); a.mrw(0)                              # v0:v1 burst exposure
+        a.t21(0x1f, 11, g.T('Lljm;'))
+        if __import__('os').environ.get('TBLOG', '0') == '1':   # P322 diag: every frame checked while 'VHs' is set
+            sb_new(4); sb_s(4, 5, 'vh check')
+            for kn in ('SENSOR_FRAME_DURATION', 'SENSOR_EXPOSURE_TIME', 'SENSOR_SENSITIVITY', 'SENSOR_TIMESTAMP'):
+                a.raw(0x62 | 5 << 8, g.Fd(CR_, kn, KEY_)); a.inv(0x72, ld_, [11, 5]); a.mro(5)
+                sb_s(4, 8, ' ' + kn + '='); a.inv(0x6e, sbo, [4, 5])
+            log_sb(4)
+        # P323: within 5 s of the request (the burst frames pass ohv.k while they arrive; later viewfinder frames
+        # can have the same exposure) and ISO within 5 % of the burst's
+        a.inv(0x71, getp, []); a.mro(4)                                                        # (v4 may be the diag log)
+        a.cs(5, S('VHt')); a.inv(0x72, mget, [4, 5]); a.mro(5); a.iof(8, 5, tLNG_); a.b21(0x38, 8, 'vhn')
+        a.t21(0x1f, 5, tLNG_); a.inv(0x6e, lngv_, [5]); a.mrw(2)                              # v2:v3 request time
+        a.inv(0x71, g.M('Ljava/lang/System;', 'currentTimeMillis', '()J'), []); a.mrw(8)      # v8:v9 now
+        a.raw(0xbc | 8 << 8 | 2 << 12)                                                         # v8 = now - request
+        a.raw(0x16 | 2 << 8, 5000); a.raw(0x31 | 7 << 8, 8 | 2 << 8); a.b21(0x3c, 7, 'vhn')   # > 5 s: not this burst
+        a.cs(5, S('VHi')); a.inv(0x72, mget, [4, 5]); a.mro(5); a.iof(8, 5, tINT); a.b21(0x38, 8, 'vhn')
+        a.t21(0x1f, 5, tINT); a.inv(0x6e, ivl, [5]); a.mr(2)                                  # v2 burst ISO
+        a.raw(0x62 | 5 << 8, g.Fd(CR_, 'SENSOR_SENSITIVITY', KEY_)); a.inv(0x72, ld_, [11, 5]); a.mro(5)
+        a.iof(8, 5, tINT); a.b21(0x38, 8, 'vhn')
+        a.t21(0x1f, 5, tINT); a.inv(0x6e, ivl, [5]); a.mr(3)                                  # v3 frame ISO
+        a.raw(0xb1 | 3 << 8 | 2 << 12); a.raw(0xda | 3 << 8, 3 | 20 << 8)           # v3 = (frame - burst) x 20
+        a.b22(0x37, 2, 3, 'vhn')                                                               # > +5 %
+        a.raw(0x7b | 8 << 8 | 2 << 12); a.b22(0x37, 3, 8, 'vhn')                               # <= -5 %
+        a.raw(0x62 | 5 << 8, g.Fd(CR_, 'SENSOR_EXPOSURE_TIME', KEY_)); a.inv(0x72, ld_, [11, 5]); a.mro(5)
+        a.iof(8, 5, tLNG_); a.b21(0x38, 8, 'vhn')
+        a.t21(0x1f, 5, tLNG_); a.inv(0x6e, lngv_, [5]); a.mrw(2)                              # v2:v3 frame exposure
+        a.raw(0xbc | 2 << 8 | 0 << 12)                                                         # v2 -= burst exposure
+        a.raw(0x16 | 4 << 8, 100); a.raw(0xbd | 2 << 8 | 4 << 12)                             # x 100
+        a.raw(0x31 | 8 << 8, 2 | 0 << 8); a.b21(0x3b, 8, 'vhn')                               # >= +1 %
+        a.raw(0x7d | 4 << 8 | 0 << 12); a.raw(0x31 | 8 << 8, 2 | 4 << 8); a.b21(0x3d, 8, 'vhn')   # <= -1 %
+        a.t21(0x1f, 6, tINT); a.inv(0x6e, ivl, [6]); a.mr(9)
+        sb_new(4); sb_s(4, 5, 'vh frame s256='); a.inv(0x6e, sbI, [4, 9])
+        a.raw(0x62 | 5 << 8, g.Fd(CR_, 'SENSOR_TIMESTAMP', KEY_)); a.inv(0x72, ld_, [11, 5]); a.mro(5)
+        sb_s(4, 6, ' ts='); a.inv(0x6e, sbo, [4, 5]); log_sb(4)
+        a.raw(0x0f | 9 << 8)
+        a.L('vhn'); a.c16(9, 256); a.raw(0x0f | 9 << 8)
+    a.L('vhskip')
     a.L('isint')
     a.t21(0x1f, 11, tINT); a.inv(0x6e, ivl, [11]); a.mr(0)
     a.inv(0x71, g.M('Landroid/app/AppGlobals;', 'getInitialApplication', '()Landroid/app/Application;'), []); a.mro(1)

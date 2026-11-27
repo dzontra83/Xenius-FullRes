@@ -550,6 +550,28 @@ def patch_classes(raw):
             return a.done()
         insert(c, ks[0] + 3, HC); check(c)
         print('P290 HDR ratio cap', hcap)
+    if 0 < int(os.environ.get('VHS', '180')) < 256:
+        # ---- P330 virtual headroom: applied_digital_gain x compare(ljm, null) / 256 (the helper returns VHS for our
+        #      50 / 25 MP burst frames, 256 otherwise): GCam lifts the scaled-down merge back to its plan ----
+        mdg = M('Lcom/google/googlex/gcam/GcamModuleJNI;', 'FrameMetadata_applied_digital_gain_set',
+                '(JLcom/google/googlex/gcam/FrameMetadata;F)V')
+        ks = [k for k, _, pl in walk(c.w) if not pl and c.w[k] & 0xff == 0x71 and c.w[k + 1] == mdg]
+        assert len(ks) == 1 and c.w[ks[0]] == 0x4071 and c.w[ks[0] + 2] == 0x3f54, [hex(x) for x in c.w[ks[0]:ks[0] + 3]]
+        assert c.w[ks[0] - 2] & 0xffff == 0xf453, hex(c.w[ks[0] - 2])                    # iget-wide v4, v15, a
+        assert c.w[ks[0] - 4] == 0x0344 and c.w[ks[0] - 3] == 0x0903, [hex(x) for x in c.w[ks[0] - 4:ks[0] - 2]]   # aget v3, v3, v9
+        k256 = struct.unpack('<I', struct.pack('<f', 1.0 / 256))[0]
+        def VH(base, na):
+            a = S(base)
+            a.cs(4, sid(d, 'getWidth')); a.inv(0x71, forname, [4]); a.mro(4)
+            a.inv(0x6e, M('Ljava/lang/Class;', 'newInstance', '()Ljava/lang/Object;'), [4]); a.mro(4)
+            a.raw(0x1f | 4 << 8, T('Ljava/util/Comparator;')); a.c4(5, 0)
+            a.inv(0x72, M('Ljava/util/Comparator;', 'compare', '(Ljava/lang/Object;Ljava/lang/Object;)I'), [4, 14, 5]); a.mr(4)
+            a.b21(0x3d, 4, 'end')                                                          # <= 0 (error): unchanged
+            a.raw(0x82 | 4 << 8 | 4 << 12); a.raw(0xc8 | 3 << 8 | 4 << 12)                 # v3 *= (float) k
+            a.raw(0x14 | 4 << 8, k256 & 0xffff, k256 >> 16); a.raw(0xc8 | 3 << 8 | 4 << 12)  # / 256
+            a.L('end'); return a.done()
+        insert(c, ks[0] - 2, VH); check(c)
+        print('P330 virtual headroom', os.environ.get('VHS', '180'))
     fix_outs(c); out[m] = c.build()
 
     # ---- P290: RawR-like night key. AeShotParams.g(F) = GCam's shot exposure compensation (slider EV, shot time only):
@@ -676,7 +698,7 @@ def patch_classes(raw):
         fe_ = F('Llet;->e:Landroid/media/Image;')
     def E(base, na):
         a = S(base)
-        if AEM:   # P320: every RAW16 frame -> helper(Pair(image, image)) = AE meter (log only), own catch-all
+        if AEM:   # P330: every RAW16 frame -> helper(Pair(image, image)) = AE meter (log only), own catch-all
             a.L('m0')
             a.cs(0, KFLAG); a.inv(0x71, forname, [0]); a.mro(0)
             a.inv(0x6e, gdm, [0]); a.mro(0)
@@ -725,7 +747,7 @@ def patch_classes(raw):
     if AEM:
         for s_, n_, h_ in c.tries: assert s_ + n_ <= info['m0'] or s_ >= info['m1'], 'try overlap AEM'
         c.handlers.append([[], info['m2']]); c.tries.append([info['m0'], info['m1'] - info['m0'], len(c.handlers) - 1])
-        print('P320 AE meter on every RAW16 frame')
+        print('P330 AE meter on every RAW16 frame')
     # catch-all for the reflective call -> return-void
     newret = len(c.w) - 1; assert c.w[newret] == 0x000e
     for s_, n_, h_ in c.tries: assert s_ + n_ <= info['t0'] or s_ >= info['t1'], 'try overlap'
@@ -1085,7 +1107,7 @@ def patch_classes2(raw):
     cu.w[0] = 0x0312; cu.w[1] = 0x0000; repl[mu] = cu.build()                    # sget v3, SelState -> const/4 v3, 0; nop
     # P319: XML loader in the top-bar row: OpenMode.initFabMenu adds an Aperture(Context) after PAT; the layout's own
     #       Aperture (Context, AttributeSet) below the bar is hidden
-    mo = one(d, 'LMC/UI/OpenPref;', 'initFabMenu'); co = Code(raw5, d.code[mo])     # P320: top row (OpenPref), after Watermark
+    mo = one(d, 'LMC/UI/OpenPref;', 'initFabMenu'); co = Code(raw5, d.code[mo])     # P330: top row (OpenPref), after Watermark
     assert co.w[86] & 0xff == 0x62 and co.w[83] & 0xff == 0x6e, hex(co.w[86])
     fhold = co.w[3]; tap_ = d.types.index('LMC/UI/Button/Aperture;')
     ap_init = mid(d, 'LMC/UI/Button/Aperture;', '<init>', '(Landroid/content/Context;)V')

@@ -1,19 +1,19 @@
-# P320 — current build
+# P330 — current build
 
 Built on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo, ask the owner):
 
 ```bash
-cd rebuild/P320
+cd rebuild/P330
 export PYTHONPATH=../P149A:../P149B:../P163:../../tools/dex
-OISB=off SETTLE=200 python3 build_p320.py XENIUS_P174B_UNSIGNED.apk XENIUS_P320_UNSIGNED.apk
-OISB=off SETTLE=200 TBLOG=1 python3 build_p320.py XENIUS_P174B_UNSIGNED.apk XENIUS_P320L_UNSIGNED.apk   # log build
+OISB=off SETTLE=200 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330_UNSIGNED.apk
+OISB=off SETTLE=200 TBLOG=1 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330L_UNSIGNED.apk   # log build
 ```
 Output is unsigned. `libtbin.so` is prebuilt from `tbin.c` (clang line in `BUILD_SO.txt`).
 
 ## Files
 | File | What |
 |---|---|
-| `build_p320.py` | patches classes.dex / classes2.dex (camera hooks, LMC prefs, UI), adds resources, calls `dexgen.py` |
+| `build_p330.py` | patches classes.dex / classes2.dex (camera hooks, LMC prefs, UI), adds resources, calls `dexgen.py` |
 | `dexgen.py` | generates classes3.dex: helper `TemporalBinning` (burst setup, pacing, watchdog, gyro, file tag, profiles, shutter ring, AE meter, XML loader `TBXL`) |
 | `tbin.c` | JNI entry points of libtbin; includes `quad.c`, `merge.c`, `natural.c` |
 | `quad.c` | quad 2x2 CFA -> Bayer remosaic: **ER** (port of Ed's RawR Detail remosaic, GPL-3.0); copy mode for SR 25 MP |
@@ -21,6 +21,22 @@ Output is unsigned. `libtbin.so` is prebuilt from `tbin.c` (clang line in `BUILD
 | `icons.py`, `textpath.py` | text icons (12 / 50 / 25, ER / SR), folder icon + 'XML loader' setting |
 | `tp288.c`, `bandsT.py`, `ghost.py`, `test_merge/` | host tests (synthetic bursts, per-band detail/noise vs a known truth) |
 | `LICENSE-RAWR` | GPL-3.0 text (the ER remosaic is a port of RawR's code; libtbin is therefore GPL-3.0) |
+
+## Own exposure: virtual headroom + scene-dependent gain (P321-P330)
+GCam brightens every shot to its own target from the frames' metadata; darkening our merge output alone is mostly undone
+in dim rooms, shot EV / HDR cap / LMC's AE modes only redistribute GCam's plan. What GCam does follow is the frame gain it
+is told in `ohv.k` (`FrameMetadata.applied_digital_gain`): report a lower gain and it brightens more, a higher one and it
+brightens less. P330 uses that as our own AE on ER 50 / 25 MP shots:
+- **merge output x `VHS`/256** (180 = -0.5 EV): highlight room above the old white (clipped share 2.5 % -> 0.2 % on the
+  LED desk); clipped pixels stay white (knee);
+- **reported gain x k/256** for the burst frames only (`compare(Lljm)`: within 5 s of the request, exposure within 1 %,
+  ISO within 5 % of the burst): `VHG` 180 in lit rooms, `VHGD` 440 in the dark (night key s = 1), blended by s;
+  daylight (EV100 `VHEV0` 9 .. 12) up to `VHBR` 0.3 EV more lift;
+- dim scenes: merge x up to `VHSD`/`VHS` (150/180) more, skipped when the night / AE scale already darkens;
+- GCam's dark-scene HDR shadow lift capped: `HDRCAPD` 1.5 (was 3.5); analog ISO cap stays 1600 (main).
+Result (owner's tests vs RawR, median brightness): dark car interior 26-29 vs 27-35, lit room as P323 (owner's pick),
+daylight between GCam and RawR. Log: `virtual headroom gain256=`, `merge s256=`, `vh frame s256= ts=`.
+Options: `VHS` 180, `VHG` 180, `VHGD` 440, `VHSD` 150, `VHEV0` 9, `VHBR` 0.3, `HDRCAPD` 1.5 (`VHS=256` = off).
 
 ## Remosaic button (ER <-> SR)
 - **ER**: Ed's Detail remosaic (RawR), then our pre-merge.
