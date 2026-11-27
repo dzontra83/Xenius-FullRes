@@ -1,19 +1,19 @@
-# P330 — current build
+# P349 — current build
 
 Built on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo, ask the owner):
 
 ```bash
-cd rebuild/P330
+cd rebuild/P349
 export PYTHONPATH=../P149A:../P149B:../P163:../../tools/dex
-OISB=off SETTLE=200 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330_UNSIGNED.apk
-OISB=off SETTLE=200 TBLOG=1 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330L_UNSIGNED.apk   # log build
+OISB=off SETTLE=200 python3 build_p349.py XENIUS_P174B_UNSIGNED.apk XENIUS_P349_UNSIGNED.apk
+OISB=off SETTLE=200 TBLOG=1 python3 build_p349.py XENIUS_P174B_UNSIGNED.apk XENIUS_P349L_UNSIGNED.apk   # log build
 ```
 Output is unsigned. `libtbin.so` is prebuilt from `tbin.c` (clang line in `BUILD_SO.txt`).
 
 ## Files
 | File | What |
 |---|---|
-| `build_p330.py` | patches classes.dex / classes2.dex (camera hooks, LMC prefs, UI), adds resources, calls `dexgen.py` |
+| `build_p349.py` | patches classes.dex / classes2.dex (camera hooks, LMC prefs, UI), adds resources, calls `dexgen.py` |
 | `dexgen.py` | generates classes3.dex: helper `TemporalBinning` (burst setup, pacing, watchdog, gyro, file tag, profiles, shutter ring, AE meter, XML loader `TBXL`) |
 | `tbin.c` | JNI entry points of libtbin; includes `quad.c`, `merge.c`, `natural.c` |
 | `quad.c` | quad 2x2 CFA -> Bayer remosaic: **ER** (port of Ed's RawR Detail remosaic, GPL-3.0); copy mode for SR 25 MP |
@@ -38,6 +38,17 @@ Result (owner's tests vs RawR, median brightness): dark car interior 26-29 vs 27
 daylight between GCam and RawR. Log: `virtual headroom gain256=`, `merge s256=`, `vh frame s256= ts=`.
 Options: `VHS` 180, `VHG` 180, `VHGD` 440, `VHSD` 150, `VHEV0` 9, `VHBR` 0.3, `HDRCAPD` 1.5 (`VHS=256` = off).
 
+## Changes P331-P349 (all tested on the phone by the owner)
+- P335: highlight knee per 2x2 cell on the cell mean (no cyan / magenta fringes near clip).
+- P336: analog ISO caps 6400 (Ed: cap digital, not analog); P337 keeps the HAL's dynamic black level (`BLFIX`).
+- P338-P343 tele: reported gain <= `VHG`, x `TELEG` 102/256; no short-exposure EC and no night key on the tele
+  (the night key was the EXIF -1.0 EV).
+- P344: GCam noise model `NZS`/`NZO` 0.08 / 0.04. P345: tele darkening from GCam's plan (`TBplan`).
+- P346-P347: highlight headroom through the shot EV (`HLEV`): tbin.c `AE_HK` 0.45, `AE_HMIN` 30, `AE_HMAX` 1.0.
+- P349: frequency merge `MG_FQC` 64 -> 16 + cell motion weights (`MG_FQW` 1, `MG_FQK` 2.0, window test off): ~20 %
+  more fine detail (tele blanket = RawR, main night +20-40 % vs RawR), clean moving flames; slightly coarser grain
+  in flat skies. Owner's LMC setup: Max ISO 6400 on the 50 / 25 MP lenses, sharpen / denoise XML off.
+
 ## Remosaic button (ER <-> SR)
 - **ER**: Ed's Detail remosaic (RawR), then our pre-merge.
 - **SR**: vivo's own remosaic. 50 MP: fully stock (GCam's HDR+ merges). 25 MP: vivo frames copied, our pre-merge and the
@@ -54,30 +65,30 @@ The file name carries the tag: `IMG_<date>_ER_<suffix>.jpg` / `_SR_`.
 | `LONGEXP` / `LONGEXP2` | 30 / 40 ms | frame cap handheld / steady (gyro) |
 | `HHEXP` / `HHISO` | 20 ms / 400 | handheld: 1/50 s while ISO <= 400 (0 = off) |
 | `NIGHTEXP` | 60 ms | night frames (OIS on) |
-| `ISOCAP` / `TELECAP` | 1600 / 800 | ISO cap main+UW / tele+teleconverter |
+| `ISOCAP` / `TELECAP` | 6400 / 6400 | ISO cap main+UW / tele+teleconverter |
 | `HDRCAP` | 1.5 | GCam HDR ratio cap (bright light) |
 | `NIGHTBASE` / `NIGHTDARK` | 0.5 / 0.0 | shot EV offset: -NIGHTBASE in bright light .. -NIGHTDARK in dim scenes |
 | `NIGHTEVHI` / `NIGHTEVLO` | 8 / 3 | EV100 range of that smoothstep |
-| `HDRCAPD` | 3.5 | HDR ratio cap in dim scenes (HDRCAP in bright light) |
-| `ECSHORT` | -1.0 | GCam short-exposure (highlight) EC in dim scenes, EV |
+| `HDRCAPD` | 1.5 | HDR ratio cap in dim scenes (HDRCAP in bright light) |
+| `ECSHORT` | -1.0 | GCam short-exposure (highlight) EC in dim scenes, EV (tele: 0, `TELEECS0`) |
 | `AFVID` / `AFHOLD` | 1 / 0 | viewfinder continuous-video AF / focus hold while steady (`AFHOLDG` 0.08 rad/s, `AFHOLDMS` 1200) |
 | `NOREAP` | 1 | disable GCam's background ProcessReaper |
 | `DARK256` | 256 | 128 = 1 EV highlight headroom (lower ISO for 50/25 MP frames) |
-| `NZS` / `NZO` | 0.13 / 0.065 | GCam noise model scale for 50 MP |
+| `NZS` / `NZO` | 0.08 / 0.04 | GCam noise model scale for 50 MP |
 | `MRG` | 1 | own pre-merge (never off in normal use) |
 | `OISB` / `SETTLE` / `SETTLEN` | copy / 300 / 1500 | OIS during the burst, viewfinder hold after it (ms) |
 | `AEMETER` | 1 | own AE meter (below); 0 = P306 behaviour |
 | `AEFLOOR` | -1.5 | lowest total shot EV offset (night key + meter) |
 | `AECAPK` | 1.0 | how strongly the meter's midtone term lowers the dim-scene HDR cap |
 | `AEMERGEK` | 1.0 | strength of the meter darkening applied as merge output scale |
-| `AEHEAD` | 1 | highlight headroom: lower 50/25 MP frame ISO when the viewfinder raw clips |
+| `AEHEAD` | 0 | old highlight headroom via frame ISO (P346+: via shot EV, `HLEV` 1.0) |
 | `TBLOG` | 0 | 1 = log build (`merge.txt`) |
 
 ## Merge (merge.c, `MG_FQ=1`)
 Sharpest raw frame = reference. Global shift, 64 px tiles, affine shift field, quarter-pixel Catmull-Rom resampling.
 Per tile and Bayer plane: 16x16 sin^2-windowed blocks, 2-D FFT, each frame keeps only the frequencies whose difference
-to the reference is explained by noise (Wiener-type shrinkage, `MG_FQC` 64); tiles that clearly do not match are left
-out. Few-frames denoise, mild detail restore, night brightening cap. Result copied into every frame of the burst.
+to the reference is explained by noise (Wiener-type shrinkage, `MG_FQC` 16 since P349, was 64); clear motion per 2x2 cell is weighted out
+(`MG_FQW` 1, `MG_FQK` 2.0); tiles that clearly do not match are left out. Few-frames denoise, mild detail restore, night brightening cap. Result copied into every frame of the burst.
 
 ## Settings
 Advanced > **Disable face detection** (pref key `STATISTICS_FACE_DETECT_MODE`): on -> no face detection in the requests,

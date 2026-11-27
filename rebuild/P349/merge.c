@@ -861,11 +861,20 @@ static void mg_tile_smp(const u16* B, int X0, int Y0, int sxq, int syq, float* F
 #ifndef MG_FQ
 #define MG_FQ 1
 #endif
+#ifndef MG_FQW
+#define MG_FQW 1                                           /* P334 cell motion weights on the frequency merge (P335 off: over-rejected foliage; P349 on, K x 2.0, window test off) */
+#endif
+#ifndef MG_FQK
+#define MG_FQK 2.0f                                        /* P334: their threshold, x the spatial merge's K */
+#endif
+#ifndef MG_FQB
+#define MG_FQB 0.f                                         /* P334: 7x7-cell window motion test threshold (z^2); 0 = off (P349) */
+#endif
 #ifndef FQ_SKIP
 #define FQ_SKIP 0
 #endif
 #ifndef MG_FQC
-#define MG_FQC 64.0f
+#define MG_FQC 16.0f                                       /* P349: 64 -> 16, the frame keeps a bin only within ~4 sigma (was ~8) */
 #endif
 #ifndef FQ_N
 #define FQ_N 16
@@ -964,7 +973,7 @@ static void fq_plane(const float* R, const float* F, float* out) {
         }
     }
 }
-static void fq_tile(int X0, int Y0, int tw, int th, int sx, int sy) {
+static void fq_tile(int X0, int Y0, int tw, int th, int sx, int sy, const float* WS) {
     int w0 = mg.w0, h0 = mg.h0; const u16* B = mg.buf[1]; const u16* R0 = mg.buf[0];
     float R[FQ_P * FQ_P], F[FQ_P * FQ_P], O[32 * 32], H[(FQ_P + 3) * FQ_P];
     fq_init();
@@ -983,10 +992,15 @@ static void fq_tile(int X0, int Y0, int tw, int th, int sx, int sy) {
         for (int j = 0; j < FQ_P; ++j) { const float* h = H + j * FQ_P;
             for (int i = 0; i < FQ_P; ++i) F[j * FQ_P + i] = wy[0] * h[i] + wy[1] * h[FQ_P + i] + wy[2] * h[2 * FQ_P + i] + wy[3] * h[3 * FQ_P + i]; }
         if (FQ_SKIP) { for (int j = 0; j < 32; ++j) for (int i = 0; i < 32; ++i) O[j * 32 + i] = F[(j + FQ_B) * FQ_P + i + FQ_B]; } else fq_plane(R, F, O);
-        for (int j = 0; j < th / 2; ++j) for (int i = 0; i < tw / 2; ++i)
-            pm.acc[(i64)(Y0 + 2 * j + py) * OW + X0 + 2 * i + px] += O[j * 32 + i];
+        for (int j = 0; j < th / 2; ++j) for (int i = 0; i < tw / 2; ++i) {
+            float wk = WS ? WS[j * 32 + i] : 1.f; if (wk <= 0.005f) continue;
+            pm.acc[(i64)(Y0 + 2 * j + py) * OW + X0 + 2 * i + px] += wk * O[j * 32 + i];
+        }
     }
-    for (int j = 0; j < th / 2; ++j) for (int i = 0; i < tw / 2; ++i) pm.wtc[(i64)(Y0 / 2 + j) * mg.w0 + X0 / 2 + i] += 1.f;
+    for (int j = 0; j < th / 2; ++j) for (int i = 0; i < tw / 2; ++i) {
+        float wk = WS ? WS[j * 32 + i] : 1.f; if (wk <= 0.005f) continue;
+        pm.wtc[(i64)(Y0 / 2 + j) * mg.w0 + X0 / 2 + i] += wk;
+    }
 }
 static void pm_acc(int ty) {
     int w = mg.w, h = mg.h, w0 = mg.w0, h0 = mg.h0;
@@ -1019,7 +1033,11 @@ static void pm_acc(int ty) {
             }
             if (MG_TREJ > 0 && zn && zs / zn > MG_TREJ) { __atomic_fetch_add(&pm.trej, 1, __ATOMIC_SEQ_CST); nrej += cw * ch; continue; }
         }
-        if (MG_FQ) { fq_tile(X0, Y0, tw, th, sx, sy); continue; }                    /* P288 */
+        /* P334: the frequency merge passes low-contrast motion (a face or a dark coat moving at high ISO: every DFT bin
+           differs by little) -> ghosts. The cell motion weights of the spatial merge are computed here too, with a
+           looser threshold (K x MG_FQK: clear motion only, small misalignment stays with the frequency merge), and
+           scale the frame's frequency-merged cells (weight 0 = the cell keeps the reference and the other frames). */
+        float K2c = MG_FQ ? K2 * MG_FQK * MG_FQK : K2;
         for (int cy = 0; cy < ch; ++cy) for (int cx = 0; cx < cw; ++cx) {
             float dm = 0; WK[cy * 32 + cx] = 0;
             for (int j = 0; j < 3; ++j) for (int i = 0; i < 3; ++i) { int o = (cy + j) * 34 + cx + i; dm += Pk[o] - (float)Pr[o]; }
@@ -1033,7 +1051,7 @@ static void pm_acc(int ty) {
             float z1 = d1 * d1 / (16.f * var);
             if (MG_FINE && z1 > z2) z2 = z1;
             float wk = 1.f;
-            if (z2 > K2) { float q = 1.f + (z2 - K2); wk = 1.f / (q * q); if (wk < 0.01f) { wk = 0; ++nrej; } }
+            if (z2 > K2c) { float q = 1.f + (z2 - K2c); wk = 1.f / (q * q); if (wk < 0.01f) { wk = 0; ++nrej; } }
             WK[cy * 32 + cx] = wk;
         }
         /* P257: the motion weights are smoothed over 3x3 cells (min of the cell and the neighbourhood mean), so a
@@ -1043,6 +1061,31 @@ static void pm_acc(int ty) {
             for (int j = -1; j <= 1; ++j) for (int i = -1; i <= 1; ++i) { int yy = cy + j, xx = cx + i; if (yy < 0 || yy >= ch || xx < 0 || xx >= cw) continue; s += WK[yy * 32 + xx]; ++n; }
             float m = s / n, w0 = WK[cy * 32 + cx]; WS[cy * 32 + cx] = MG_WSM ? (w0 < m ? w0 : m) : w0;
         }
+        if (MG_FQ && MG_FQW && MG_FQB > 0) {
+            /* P334: low-contrast motion at high ISO is within the noise of a 3x3-cell test, but not of a 7x7-cell
+               window (14x14 px): z = (sum of cell differences)^2 / (16 x sum of variances), signed, so texture and
+               small misalignment average out and only a real brightness change of the area counts. Summed-area
+               tables over the tile's cells; the window is clipped at the tile border. */
+            double SD[33 * 33], SV[33 * 33];
+            for (int i = 0; i <= cw; ++i) { SD[i] = 0; SV[i] = 0; }
+            for (int cy = 0; cy < ch; ++cy) {
+                double rd = 0, rv = 0; SD[(cy + 1) * 33] = 0; SV[(cy + 1) * 33] = 0;
+                for (int cx = 0; cx < cw; ++cx) {
+                    int o = (cy + 1) * 34 + cx + 1; float v = (float)Pr[o] * 0.25f, sg = v > 64.f ? v - 64.f : 0.f;
+                    rd += Pk[o] - (float)Pr[o]; rv += mg.va * sg + mg.vb + (MG_REL * sg) * (MG_REL * sg);
+                    SD[(cy + 1) * 33 + cx + 1] = SD[cy * 33 + cx + 1] + rd; SV[(cy + 1) * 33 + cx + 1] = SV[cy * 33 + cx + 1] + rv;
+                }
+            }
+            for (int cy = 0; cy < ch; ++cy) for (int cx = 0; cx < cw; ++cx) {
+                int ya = cy - 3 < 0 ? 0 : cy - 3, yb = cy + 4 > ch ? ch : cy + 4, xa = cx - 3 < 0 ? 0 : cx - 3, xb = cx + 4 > cw ? cw : cx + 4;
+                double d = SD[yb * 33 + xb] - SD[ya * 33 + xb] - SD[yb * 33 + xa] + SD[ya * 33 + xa];
+                double v = SV[yb * 33 + xb] - SV[ya * 33 + xb] - SV[yb * 33 + xa] + SV[ya * 33 + xa];
+                float zb = (float)(d * d / (16.0 * v + 1e-9));
+                if (zb > MG_FQB) { float q = 1.f + (zb - MG_FQB) * (1.f / MG_FQB); float wb = 1.f / (q * q * q * q);
+                    if (wb < WS[cy * 32 + cx]) WS[cy * 32 + cx] = wb < 0.01f ? 0.f : wb; }
+            }
+        }
+        if (MG_FQ) { fq_tile(X0, Y0, tw, th, sx, sy, MG_FQW ? WS : 0); continue; }   /* P288 (+ P334 motion weights) */
         for (int cy = 0; cy < ch; ++cy) for (int cx = 0; cx < cw; ++cx) {
             float wk = WS[cy * 32 + cx];
             if (wk <= 0.005f) continue;
@@ -1131,6 +1174,12 @@ static float pm_detail(int x, int y, float v, float g) {
 #ifndef PM_KNEE
 #define PM_KNEE 0.6f
 #endif
+#ifndef PM_HLC
+#define PM_HLC 1                                           /* P334: knee + detail per 2x2 cell (hue kept near clip) */
+#endif
+#ifndef PM_HLN
+#define PM_HLN 990                                         /* P334: reference value that counts as near clip */
+#endif
 static inline float pm_knee(float v, float sc) {
     float x = (v - 64.f) * (1.f / 959.f); if (x <= 0.f) return 64.f + (v - 64.f) * sc;
     float t = (x - PM_KNEE) * (1.f / (1.f - PM_KNEE)); t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
@@ -1146,25 +1195,63 @@ static void pm_fin(int ty) {                                /* result -> frame 0
        1/30 s + ISO cap left the frames far below that plan, the output is scaled down (x pm_night/256) so the final
        image is darker instead of pushed (the noise model GCam uses is scaled to match in the Java hook). */
     float sc = (pm_night > 0 && pm_night < 256) ? (float)pm_night / 256.f : 1.f;
-    for (int y = y0; y < y1; ++y) {
-        u16* o = mg.buf[0] + (i64)y * OW; u16* kk = pm.keep + (i64)y * OW;
-        const float* a = pm.acc + (i64)y * OW; const float* q = MG_KR ? pm.wtc + (i64)y * OW : pm.wtc + (i64)(y >> 1) * w0;
-        for (int x = 0; x < w; ++x) {
-            int r = o[x];
-            { if (r < 1020) {
-                rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
-                float d = ((float)(u32)(rng >> 40 & 0xffffff) - (float)(u32)(rng >> 16 & 0xffffff)) * (0.5f / 16777216.f);
+    /* P334 highlight consistency: the knee and the detail boost used to work per pixel, i.e. per colour. Near clip
+       (bright window, lamp) one colour of a 2x2 cell was clipped and kept at white while its neighbours were scaled
+       down by the knee and sharpened on their own -> the colour ratios of the cell changed -> cyan / magenta fringes
+       around windows. Now per 2x2 cell (R, Gr, Gb, B): one scale for all four from the cell's brightest value (a
+       clipped value counts as white), so the hue of every cell is kept; no detail boost in cells that touch clip. */
+    float V[2][8192]; unsigned char C[2][8192];
+    for (int yp = y0; yp < y1; yp += 2) {
+        int nr = yp + 1 < y1 ? 2 : 1;
+        for (int j = 0; j < nr; ++j) {
+            int y = yp + j; const u16* o = mg.buf[0] + (i64)y * OW;
+            for (int x = 0; x < w; ++x) C[j][x] = o[x] >= 1020 ? 2 : (o[x] >= PM_HLN ? 1 : 0);
+        }
+        for (int j = 0; j < nr; ++j) {
+            int y = yp + j; const u16* o = mg.buf[0] + (i64)y * OW;
+            const float* a = pm.acc + (i64)y * OW; const float* q = MG_KR ? pm.wtc + (i64)y * OW : pm.wtc + (i64)(y >> 1) * w0;
+            for (int x = 0; x < w; ++x) {
+                if (C[j][x] == 2) { V[j][x] = (float)o[x]; continue; }        /* clipped: stays clipped */
+                int xc = x & ~1, hot = 0;
+                for (int jj = 0; jj < nr; ++jj) { hot |= C[jj][xc]; if (xc + 1 < w) hot |= C[jj][xc + 1]; }
                 float W = q[MG_KR ? x : x >> 1], v = a[x] / W;
                 if (!MG_KR && MG_LOWT > 0 && W < T) v = pm_lowdn(x, y, v, W, 0.5f * (T - W) / T, &nlow);   /* P258: at most half */
-                if (!MG_KR && MG_SHP > 0) { float g = W / (0.75f * (float)pm.nmerged); v = pm_detail(x, y, v, g > 1.f ? 1.f : g); }
-                if (sc < 1.f) v = pm_knee(v, sc);
-                int iv = (int)(v + d + 0.5f); r = iv < 0 ? 0 : (iv > 1023 ? 1023 : iv);
-            }                                      /* clipped: stays clipped (P314: scaled clipped pixels turned pink) */
+                if (!MG_KR && MG_SHP > 0 && !(PM_HLC && hot)) { float g = W / (0.75f * (float)pm.nmerged); v = pm_detail(x, y, v, g > 1.f ? 1.f : g); }
+                V[j][x] = v;
             }
-            o[x] = (u16)r;
         }
-        for (int x = 0; x < OW; ++x) kk[x] = o[x];        /* full row incl. padding */
-        if (!(y & 1)) for (int x = 0; x < w0; ++x) { ws += q[MG_KR ? 2 * x : x]; ++nc; }
+        for (int x = 0; x < w; x += 2) {
+            int xn = x + 1 < w ? 2 : 1;
+            float k = sc;
+            if (sc < 1.f) {
+                if (PM_HLC) {
+                    /* P335: the cell's mean (a clipped value counts as white), not its brightest value: with the max
+                       every cell with one bright colour escaped the scale and GCam then lifted it x 1/sc (bright
+                       shoe, 2026-11-27); the mean keeps the old per-pixel brightness on average */
+                    float m = 0.f; int nm = 0;
+                    for (int j = 0; j < nr; ++j) for (int i = 0; i < xn; ++i) { m += C[j][x + i] == 2 ? 1023.f : V[j][x + i]; ++nm; }
+                    m /= (float)nm;
+                    k = m > 64.5f ? (pm_knee(m, sc) - 64.f) / (m - 64.f) : sc;
+                }
+            }
+            for (int j = 0; j < nr; ++j) {
+                u16* o = mg.buf[0] + (i64)(yp + j) * OW;
+                for (int i = 0; i < xn; ++i) {
+                    int X = x + i; if (C[j][X] == 2) continue;
+                    float v = V[j][X];
+                    if (sc < 1.f) v = PM_HLC ? 64.f + (v - 64.f) * k : pm_knee(v, sc);
+                    rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+                    float d = ((float)(u32)(rng >> 40 & 0xffffff) - (float)(u32)(rng >> 16 & 0xffffff)) * (0.5f / 16777216.f);
+                    int iv = (int)(v + d + 0.5f); o[X] = (u16)(iv < 0 ? 0 : (iv > 1023 ? 1023 : iv));
+                }
+            }
+        }
+        for (int j = 0; j < nr; ++j) {
+            int y = yp + j; const u16* o = mg.buf[0] + (i64)y * OW; u16* kk = pm.keep + (i64)y * OW;
+            const float* q = MG_KR ? pm.wtc + (i64)y * OW : pm.wtc + (i64)(y >> 1) * w0;
+            for (int x = 0; x < OW; ++x) kk[x] = o[x];        /* full row incl. padding */
+            if (!(y & 1)) for (int x = 0; x < w0; ++x) { ws += q[MG_KR ? 2 * x : x]; ++nc; }
+        }
     }
     for (int y = h; y < OH && ty == mg.ty - 1; ++y) { const u16* o = mg.buf[0] + (i64)y * OW; u16* kk = pm.keep + (i64)y * OW; for (int x = 0; x < OW; ++x) kk[x] = o[x]; }
     mg.wsum[ty] = ws; mg.wcnt[ty] = nc; __atomic_fetch_add(&pm.lowdn, nlow, __ATOMIC_SEQ_CST);

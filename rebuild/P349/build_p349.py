@@ -492,7 +492,17 @@ def patch_classes(raw):
     def M3(base, na):
         a = S(base)
         a.inv(0x71, props, []); a.mro(4); a.cs(5, KFLAG); a.inv(0x72, get, [4, 5]); a.mro(4); a.b21(0x38, 4, 'end')
-        a.c4(3, 0); a.L('end'); return a.done()
+        if os.environ.get('BLFIX', '1') == '1':
+            # P337: keep the HAL's dynamic black level (at ISO 3200 the tele reports 64.375, GCam's static 64 left +0.4
+            # in every channel -> after WB gains and a 2-3 EV shadow lift a red/magenta cast). The helper rescales it
+            # around 64 by the merge output scale (props nightS), as the merged data is scaled the same way.
+            a.b21(0x38, 3, 'end')
+            a.cs(4, KDIM); a.inv(0x71, forname, [4]); a.mro(4); a.inv(0x6e, M('Ljava/lang/Class;', 'newInstance', '()Ljava/lang/Object;'), [4]); a.mro(4)
+            a.raw(0x1f | 4 << 8, T('Ljava/util/Comparator;')); a.c4(5, 0)
+            a.inv(0x72, M('Ljava/util/Comparator;', 'compare', '(Ljava/lang/Object;Ljava/lang/Object;)I'), [4, 3, 5])
+        else:
+            a.c4(3, 0)
+        a.L('end'); return a.done()
     insert(c, p, M3); check(c)
     if os.environ.get('NZFIX', '1') == '1':
         # 50 MP noise model: ohv.k builds GCam's NoiseModel from SENSOR_NOISE_PROFILE (or the port's custom model);
@@ -572,7 +582,23 @@ def patch_classes(raw):
             a.L('end'); return a.done()
         insert(c, ks[0] - 2, VH); check(c)
         print('P330 virtual headroom', os.environ.get('VHS', '180'))
+    if os.environ.get('ECZERO', '1') == '1':
+        # P342: the HAL reports CONTROL_AE_EXPOSURE_COMPENSATION -1 EV (tele) -> GCam took it as the user's EV for the
+        #       frames (AeMetadata) and the shot (ShotMetadata, EXIF -1.0 EV) and rendered a stop darker. Report 0.
+        mae = M('Lcom/google/googlex/gcam/GcamModuleJNI;', 'AeMetadata_exposure_compensation_set', '(JLcom/google/googlex/gcam/AeMetadata;F)V')
+        ks = [k for k, _, pl in walk(c.w) if not pl and c.w[k] & 0xff == 0x71 and c.w[k + 1] == mae]
+        assert len(ks) == 1 and c.w[ks[0]] == 0x4071 and c.w[ks[0] + 2] == 0x3254, [hex(x) for x in c.w[ks[0]:ks[0] + 3]]   # {v4 v5 v2 v3}
+        insert(c, ks[0], lambda base, na: [0x0312]); check(c)                                  # const/4 v3, 0
+        print('P342 AeMetadata EC 0')
     fix_outs(c); out[m] = c.build()
+    if os.environ.get('ECZERO', '1') == '1':
+        m = one(d, 'Lfqv;', 'a'); c = Code(raw, d.code[m])
+        msc = M('Lcom/google/googlex/gcam/GcamModuleJNI;', 'ShotMetadata_exposure_compensation_set', '(JLcom/google/googlex/gcam/ShotMetadata;F)V')
+        ks = [k for k, _, pl in walk(c.w) if not pl and c.w[k] & 0xff == 0x71 and c.w[k + 1] == msc]
+        assert len(ks) == 1 and c.w[ks[0]] == 0x4071 and c.w[ks[0] + 2] == 0x1832, [hex(x) for x in c.w[ks[0]:ks[0] + 3]]   # {v2 v3 v8 v1}
+        insert(c, ks[0], lambda base, na: [0x0112]); check(c)                                  # const/4 v1, 0
+        fix_outs(c); out[m] = c.build()
+        print('P342 ShotMetadata EC 0')
 
     # ---- P290: RawR-like night key. AeShotParams.g(F) = GCam's shot exposure compensation (slider EV, shot time only):
     #      ev' = helper.compare(Float ev) / 1000, the helper adds a darkening that grows as the viewfinder scene gets

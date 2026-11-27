@@ -5,15 +5,15 @@ photos from the native quad sensor mode, our own remosaic and burst merge in fro
 
 > **Continuing in a new chat?** Read [`HANDOFF.md`](HANDOFF.md) first.
 
-## Current build: P330 (2026-11-27)
+## Current build: P349 (2026-11-27)
 
-`rebuild/P330/build_p330.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
-[`rebuild/P330/README.md`](rebuild/P330/README.md).
+`rebuild/P349/build_p349.py` on top of `XENIUS_P174B_UNSIGNED.apk` (not in the repo). Details and all options:
+[`rebuild/P349/README.md`](rebuild/P349/README.md).
 
 ```bash
-cd rebuild/P330
+cd rebuild/P349
 export PYTHONPATH=../P149A:../P149B:../P163:../../tools/dex
-OISB=off SETTLE=200 python3 build_p330.py XENIUS_P174B_UNSIGNED.apk XENIUS_P330_UNSIGNED.apk
+OISB=off SETTLE=200 python3 build_p349.py XENIUS_P174B_UNSIGNED.apk XENIUS_P349_UNSIGNED.apk
 ```
 Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 
@@ -21,12 +21,12 @@ Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 |---|---|
 | RES button | **12 / 50 / 25 MP**; 25 MP = merged 50 MP frame, demosaic + Lanczos-3 + remosaic |
 | Remosaic button | **ER** (Ed's RawR Detail) <-> **SR** (vivo's own remosaic); tag in the file name (`IMG_<date>_ER_J83.jpg`). SR at 50 MP is stock; SR at 25 MP = vivo remosaic + our merge + resample |
-| Burst merge | sharpest frame as reference, tile alignment with sub-pixel resampling, **frequency-domain robust merge**; HDR+ receives identical frames |
+| Burst merge | sharpest frame as reference, tile alignment with sub-pixel resampling, **frequency-domain robust merge** with per-cell motion weights (P349); HDR+ receives identical frames |
 | Capture | 6 frames in flight; first burst after app start warms up with 1 frame; watchdog after 2 s; AF frozen during the burst; 10 ms exposure steps (no 50 Hz banding) |
 | Background | GCam's own background process reaper is off, so a merge finishes when the app is left |
 | Exposure | handheld 1/50 s while ISO <= 400, then up to 30 ms; steady up to 40 ms; night up to 60 ms with OIS; scene-dependent: -0.5 EV in bright light (EV100 >= 8) easing to 0 in dim scenes (EV100 <= 3) |
-| Own AE | meter on GCam's live binned raw stream: darkens lit dim rooms via a merge output scale (highlights kept white), lowers 50 / 25 MP frame ISO when highlights clip so lamp glow keeps its gradient |
-| Tone | GCam HDR ratio cap 1.5 (bright) .. 3.5 (dim); highlight (short-exposure) compensation 0 .. -1.0 EV in dim scenes; RawR NTRL-based LMC Manual curve with a softer top (values in HANDOFF) |
+| Own AE | meter on GCam's live binned raw stream: darkens lit dim rooms via a merge output scale (highlights kept white), lowers the shot EV (up to -1 EV) when highlights clip so lamp glow keeps its gradient |
+| Tone | GCam HDR ratio cap 1.5; highlight (short-exposure) compensation 0 .. -1.0 EV in dim scenes; RawR NTRL-based LMC Manual curve with a softer top (values in HANDOFF) |
 | Focus | viewfinder uses continuous **video** AF (no single-frame probe jumps); fixed centre AF region; optional focus hold (`AFHOLD=1`) |
 | Settings | Advanced > **Disable face detection**; one settings profile per mode (12 / 50 / 25) in `/LMC8.3/XML/auto/` |
 | XML loader | top-bar folder button (LMC's Aperture slot, setting "XML loader"): lists `/LMC8.3/XML` newest first, one tap loads + restarts; LMC's first-import bug fixed, "XML loaded" toast |
@@ -35,8 +35,8 @@ Add `TBLOG=1` for the log build (`merge.txt`). Output is unsigned.
 ## Credits
 
 - **Ed (RawR)** — with his permission:
-  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P330/quad.c`), GPL-3.0
-    (`rebuild/P330/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
+  - the **ER Detail remosaic**: a C port of RawR's `CfaRemosaic` (`rebuild/P349/quad.c`), GPL-3.0
+    (`rebuild/P349/LICENSE-RAWR`); because of it `libtbin` is GPL-3.0;
   - the **tone**: the RAWR NTRL tone curve values used for the LMC Manual curve;
   - ideas: the shutter progress ring, darker exposure in dim scenes (night key), burst focus lock and noise handling.
 - **Ray** — the idea of capping handheld frames at 1/50 s while ISO stays low (implementation written here).

@@ -128,6 +128,65 @@ softer top since 2026-11-26 (spotlit subjects keep colour), all five curves:
 - P330 values: merge x 180/256 (highlight room), gain 180 lit rooms / 440 dark / daylight +0.3 EV, HDR cap 1.5 in the
   dark. Owner: "we nailed it" (dark scenes close to RawR, lit room as P323, daylight middle ground).
 - Ed (RawR): do not cap analog at 800 (analog beats digital); cap the digital - which is what the reported gain does.
+- "More natural / RawLens mood" tests 2026-11-27 (P331-P333, dropped, back to P330): GCam re-normalises the final
+  image in lit rooms whatever we change. HDR cap 1.25 / 1.0 -> brighter overall + window clipped earlier (GCam lifts
+  globally instead). `LiveHdrMetadata.b(F)` = manual_long_tet_override (vivo AE TET x 0.7) -> no change (the burst
+  is captured at viewfinder TET, so long < short and GCam drops it). VHG 215 / 256 -> no change in lit rooms. A
+  darker LMC Manual curve (pow 1.2, confirmed active) -> no change: GCam measures the curve-applied output. Untested
+  ideas: EV slider -1/-2 as a lever; darkening the final YUV ourselves in GCam's post-process step (`Lfsk;->a` /
+  `Lftz;->a` with a YuvWriteView) via libtbin. Owner decided not to pursue.
+- P334 (on P330, untested on phone): (1) pm_fin knee + detail per 2x2 cell (`PM_HLC`, near clip `PM_HLN` 990): the
+  per-colour knee shifted hue near clip by 7-9 % (p99 22 %) on a synthetic bluish window -> cyan / magenta fringes;
+  now 0.1 %. (2) GCam denoise: NZS/NZO 0.13/0.065 -> 0.09/0.045. (3) frequency merge gets motion weights: cell test
+  (K x `MG_FQK` 1.6) + 7x7-cell signed window test (`MG_FQB` 9): low-contrast motion at high ISO ghost -4.0 % ->
+  -0.5 % of level; static scenes unchanged (only mismatched image-border tiles). Host test data: /home/claude/t334
+  (gen.py, gen_hard.py, gs.py, hue.py; harness = tp288.c + `pm_night = PMN` + nzS/nzO from -D).
+- P334 on the phone (2026-11-27): trees mushy (daylight ISO 45: rej 452/1000), shoe too bright, tele ISO 12800 awful.
+  Causes: the max-based cell knee let every cell with one bright colour escape the scale (GCam lifted it x 1/sc);
+  NZS/NZO 0.09/0.045 = too little GCam denoise at high ISO; motion weights tuned on synthetic noise 15x the real
+  (real va 0.07-1.3 vs 18 in the test) -> over-rejection. P335 = P330 + only the per-cell knee, on the cell MEAN
+  (hue near clip 7-9 % -> 0.1 %, brightness per band within +-2 % of P330); MG_FQW 0; NZS/NZO back to P330.
+- Low light awful on P330 too (tele ISO 12800 shot): GCam planned 125 ms / ISO 2400, our caps gave 60 ms / ISO 587
+  (TELECAP 800 x headroom 188/256) = 3.1 EV under, raw med=1 p99=14 of 1000, GCam lifted it back digitally. Ed was
+  right: cap digital, not analog. P336 = P335 + ISOCAP / TELECAP 6400.
+- P336 on the phone: tele analog tops out at ISO 3200 (requested 5000 -> HAL 3200), noise better but a red/magenta
+  cast in dark shadows. The HAL's dynamic black level is equal per channel but rises with gain (64.375 at ISO 3200,
+  63.85 at 1600); M3 (P148) nulled it for our frames -> GCam used static 64 -> +0.4 in every channel, coloured by
+  the WB gains and lifted 2-3 EV. P337: M3 keeps it, the helper (compare(float[])) rescales it around 64 by nightS/256
+  like the merged data (`BLFIX=0` = old behaviour).
+- P338-P341 tele (quadTo 5) brightness, owner: dim tele shots 1-4 EV under the viewfinder, a stop under RawR.
+  P338 TELEG (reported gain x TELEG/256), P339 tele gain <= VHG (no dark-scene darkening), P340 TELEG 102, P341 no
+  P305 short-exposure EC on the tele (ECSHORT x s = -1.0 EV in dim scenes, shown as EXIF -1.0 EV; with the HDR
+  cap it pulled the whole shot down). Main / UW unchanged.
+- EXIF exposure bias (-1.0 EV on tele, not from LMC lib patches / XML): GCam copies the HAL's capture-result
+  CONTROL_AE_EXPOSURE_COMPENSATION (x step) into AeMetadata (ohv.k, per frame) and ShotMetadata (Lfqv.a -> EXIF).
+  P342 (`ECZERO`) reports 0 in both: EXIF still -1.0. The real source is our own night key (AeShotParams shot EV,
+  off -0.5 .. -1.5 with the AE meter; log "night key ... off=-1.0" 199x). P343 (`TELENK0`): off = 0 on the tele.
+  Owner: tele brightness OK on P343. Detail still behind RawR (bottle labels, 100 % crops: GCam denoise smears
+  low-contrast print). P344 = NZS/NZO 0.08/0.04 retest (P334's "awful" ISO 12800 shot was mostly the analog cap).
+  P344 street at dusk (tele ISO ~1000): sharper than RawR. Very dark footwell (tele): far too bright vs RawR
+  (median 17 vs 3). P345: cap branch stores GCam's plan (ns x ISO / 375e6) as props 'TBplan'; tele gain x
+  clamp(plan/256, 1, 4) -> scenes past 60 ms x ISO 1600 up to 2 EV darker, dim rooms (no cap) unchanged.
+- Very dark tele fixed by the owner in LMC: Max ISO (lib_ISO_key_2, hex float LE, value = ISO / 50: 00000043 = 6400, 00008042 = 3200)
+  = 6400 on the tele -> footwell median 3 = RawR (RawR: ISO 800 x AE post-gain 4 x scene key ~ 6400 total).
+  XMLs *_tele6400.xml: slot _2 = 6400 in the 50/25 bundles. P345's TBplan darkening is then mostly redundant.
+- The EV slider / shot EV (AeShotParams.g) IS followed by GCam both ways (owner test 2026-11-27, tele vase: EV 0 /
+  +1.83 / -1.33 -> capture ISO 933 / 1935 / 384, median 30 / 71 / 16, clipped 0.72 / 4.84 / 0.02 %). P346: highlight
+  headroom moved from the frame ISO cut (AEHEAD, now off) to the night key's shot EV: off += HLEV x log2(AEhs/256),
+  all lenses; tbin.c headroom stronger (AE_HK 0.75, AE_HC 20, AE_HMAX 1.5). On the phone it held lamps / candles /
+  spots well but 5 of 9 indoor shots hit -1.5 (a lamp in frame always clips). P347: AE_HK 0.45, AE_HMIN 30 (first
+  0.3 % clipped ignored, then log2(1 + (c10 - 30) / 20)), AE_HMAX 1.0.
+- Owner's final setup 2026-11-27: P347 + XMLs *_final.xml: 50/25 MP Max ISO 6400 (lib_ISO_key, _2, _3, _4 =
+  00000043 = 6400; first version wrongly 00008042 = 3200; front default), RawR NTRL soft-top curve on all five curves. 12 MP profile untouched.
+- Detail test 2026-11-27 (portrait, ISO ~2800, same shutter as RawR ISO 584): XML sharpen/denoise OFF keeps ~40 %
+  more fine detail than ON (skin texture = RawR); RawR still ahead on brows / hair strands (merge-level softening).
+  P348A / P348B = P347 + NZS/NZO 0.04/0.02 and 0.02/0.01 (only classes3.dex differs), build:
+  `OISB=off SETTLE=200 NZS=.. NZO=.. PYTHONPATH=/home/claude/work python3 build_p348.py P174B.apk out.apk`.
+- Fabric test (static blanket, ISO ~5500): P347 = RawR detail (tone-matched); P348A/B no change in noise -> dropped.
+  Pushed towel: moving areas ~1/3 less detail, vertical streaks. P349A = P347 + cell motion weights on the frequency
+  merge (MG_FQW 1, MG_FQK 2.0, the 7x7 window test MG_FQB off); P349B = A + MG_FQC 16 (frequency merge keeps the
+  reference above ~4 sigma instead of ~8). Flags in P349x/BUILD_SO.txt; L = log builds.
+- `lib_ISO_key*` = LMC lib patch "Max ISO" (hex float, "0" = default); `pref_nm_iso_max_value*` = night mode only.
 - Next: highlight reconstruction into the new room (clipped LED / lamp cores: rebuild the clipped channel from nearby
   unclipped colour ratios, fully clipped stays white), test on a synthetic lamp scene first.
 

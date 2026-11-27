@@ -481,7 +481,7 @@ def build_classes3():
     a.L('mc2'); a.raw(0x17 | 6 << 8, 100000 & 0xffff, 100000 >> 16); a.raw(0x31 | 1 << 8, 10 | 6 << 8)
     a.b21(0x3b, 1, 'mset'); a.raw(0x04 | 10 << 8 | 6 << 12)                                       # >= 0.1 ms
     a.L('mset')
-    if __import__('os').environ.get('AEMETER', '1') == '1' and __import__('os').environ.get('AEHEAD', '1') == '1':
+    if __import__('os').environ.get('AEMETER', '1') == '1' and __import__('os').environ.get('AEHEAD', '0') == '1':
         # P315: highlight headroom from the meter (props 'AEhs', Float s256 < 256): ISO x s / 256 (>= 50), else shorter frame
         FLT3 = g.T('Ljava/lang/Float;')
         a.inv(0x71, getp, []); a.mro(3); a.cs(1, S('AEhs')); a.inv(0x72, mget, [3, 1]); a.mro(3)
@@ -531,7 +531,7 @@ def build_classes3():
         a.L(lb + 'b')
         sb_s(2, 1, ' night='); a.inv(0x6e, sbI, [2, 3])
         a.inv(0x71, ivo, [3]); a.mro(3); a.cs(1, S('nightS')); a.inv(0x72, mput, [5, 1, 3])
-    TELECAP = int(__import__('os').environ.get('TELECAP', '800'))    # P264: ISO cap for tele / teleconverter ('quadTo' = 5)
+    TELECAP = int(__import__('os').environ.get('TELECAP', '6400'))    # P264: ISO cap for tele / teleconverter ('quadTo' = 5)
     def capload(lb):
         # v1 = ISO cap for this camera; v5 props; v3 temp
         a.cs(1, QKEY); a.inv(0x72, mget, [5, 1]); a.mro(3)
@@ -575,7 +575,7 @@ def build_classes3():
             a.L('hh0')
         DARK = int(__import__('os').environ.get('DARK256', '256'))     # frame gain x DARK/256 (181 = -0.5 EV, 128 = -1 EV), all 50 MP shots
         nolong = 'ldk' if DARK != 256 else 'lng0'
-        CAPEXP = __import__('os').environ.get('CAPEXP', '1') == '1'; MAXISO = int(__import__('os').environ.get('MAXISO', '6400')); ISOCAP = int(__import__('os').environ.get('ISOCAP', '1600'))
+        CAPEXP = __import__('os').environ.get('CAPEXP', '1') == '1'; MAXISO = int(__import__('os').environ.get('MAXISO', '6400')); ISOCAP = int(__import__('os').environ.get('ISOCAP', '6400'))
         a.raw(0x31 | 1 << 8, 8 | 6 << 8)
         if CAPEXP: a.b21(0x3c, 1, 'lcap')                                                          # exposure > LONGEXP: cap
         a.b21(0x3b, 1, nolong)                                                                     # exposure == LONGEXP
@@ -612,6 +612,11 @@ def build_classes3():
         if CAPEXP:
             # GCam asked for frames longer than LONGEXP (night): shorten to LONGEXP, raise ISO (max MAXISO), same total
             a.L('lcap')
+            # P345: GCam's plan (exposure ns x ISO) / 375e6 (= 60 ms x ISO 1600 / 256) -> props 'TBplan', read by the tele
+            #       gain: very dark scenes (plan past our caps) get darker again on the tele
+            a.raw(0x81 | 6 << 8 | 4 << 12); a.raw(0xbd | 6 << 8 | 8 << 12)                          # v6:v7 = exposure x ISO
+            a.raw(0x18 | 10 << 8, *struct.unpack('<4H', struct.pack('<q', 375000000))); a.raw(0xbe | 6 << 8 | 10 << 12)
+            a.raw(0x84 | 6 << 8 | 6 << 12); a.inv(0x71, ivo, [6]); a.mro(6); a.cs(1, S('TBplan')); a.inv(0x72, mput, [5, 1, 6])
             sb_new(2); sb_s(2, 3, 'cap exp='); a.inv(0x6e, sbj, [2, 8, 9]); sb_s(2, 3, ' iso='); a.inv(0x6e, sbI, [2, 4])
             NIGHTEXP = int(__import__('os').environ.get('NIGHTEXP', '60000000'))   # P262: night (GCam wants > LONGEXP): frames up to NIGHTEXP, OIS on
             if NIGHTEXP > LONGEXP:
@@ -722,6 +727,22 @@ def build_classes3():
             k_ = fbits(1.0); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc6 | 2 << 8 | 3 << 12)   # f = 1 - c t
             a.raw(0x82 | 3 << 8 | 6 << 12); a.raw(0xc8 | 3 << 8 | 2 << 12); a.raw(0x87 | 6 << 8 | 3 << 12)  # gain x f
             a.L('vb9')
+        TELEG = int(__import__('os').environ.get('TELEG', '102'))   # P338: tele (quadTo 5) reported gain x TELEG/256 (205 = 25 % brighter)
+        if TELEG != 256:
+            a.cs(1, S('TBplan')); a.inv(0x72, mget, [5, 1]); a.mro(7); a.inv(0x72, mrem, [5, 1])        # P345
+            a.cs(1, QKEY); a.inv(0x72, mget, [5, 1]); a.mro(3)
+            a.cs(1, S('5')); a.inv(0x6e, g.M(STR, 'equals', '(' + OBJ + ')Z'), [1, 3]); a.mr(1); a.b21(0x38, 1, 'tg9')
+            # P339: no dark-scene darkening on the tele (photos 2-4 EV under the viewfinder): gain <= VHG, then x TELEG
+            a.c16(1, VHG); a.b22(0x37, 6, 1, 'tg1'); a.raw(0x01 | 6 << 8 | 1 << 12)
+            a.L('tg1')
+            a.raw(0xd2 | 6 << 8 | 6 << 12, TELEG); a.raw(0xd3 | 6 << 8 | 6 << 12, 256)
+            # P345: x plan/256, clamped 1 .. 4 (very dark scenes up to 2 EV darker; dim rooms unchanged)
+            a.iof(1, 7, tINT); a.b21(0x38, 1, 'tg9')
+            a.t21(0x1f, 7, tINT); a.inv(0x6e, ivl, [7]); a.mr(1)
+            a.c16(2, 256); a.b22(0x35, 1, 2, 'tg2'); a.raw(0x01 | 1 << 8 | 2 << 12)
+            a.L('tg2'); a.c16(2, 1024); a.b22(0x37, 1, 2, 'tg3'); a.raw(0x01 | 1 << 8 | 2 << 12)
+            a.L('tg3'); a.raw(0xb2 | 6 << 8 | 1 << 12); a.raw(0xd3 | 6 << 8 | 6 << 12, 256)
+            a.L('tg9')
         sb_new(3); sb_s(3, 1, 'virtual headroom gain256='); a.inv(0x6e, sbI, [3, 6]); log_sb(3)
         a.inv(0x71, ivo, [6]); a.mro(3); a.cs(1, S('VHs')); a.inv(0x72, mput, [5, 1, 3])
         VHSD = int(__import__('os').environ.get('VHSD', '150'))  # P326: dark scenes: merge output darker (not lifted back)
@@ -1376,6 +1397,7 @@ def build_classes3():
     a.iof(0, 11, g.T('Ljava/lang/Float;')); a.b21(0x39, 0, 'isflt')                           # P285: night key
     a.iof(0, 11, g.T('Lljm;')); a.b21(0x39, 0, 'isljm')                                        # P321: frame gain factor
     a.iof(0, 11, tINT); a.b21(0x39, 0, 'isint')
+    a.iof(0, 11, g.T('[F')); a.b21(0x39, 0, 'isfa')                                          # P337: black level
     SDF = 'Ljava/text/SimpleDateFormat;'
     a.iof(0, 11, g.T(SDF)); a.b21(0x39, 0, 'issdf')
     a.inv(0x71, getp, []); a.mro(4); a.cs(5, S('TBSPO')); a.inv(0x72, mput, [4, 5, 11])          # P281: GCam's shutter ring
@@ -1442,6 +1464,13 @@ def build_classes3():
     #       so spotlit subjects in a dark room (bananas under a pendant lamp) keep colour; shadows are the HDR ratio's job
     ECS = float(os.environ.get('ECSHORT', '-1.0'))
     cf(5, ECS); a.raw(0xc8 | 5 << 8 | 4 << 12)                                                  # v5 = ECS x s
+    if os.environ.get('TELEECS0', '1') == '1':
+        # P341: no short-exposure EC on the tele: with the HDR ratio cap it pulled the whole dim tele shot down
+        #       (EXIF -1.0 EV, a stop under RawR)
+        a.cs(7, S('quadTo')); a.inv(0x72, mget, [6, 7]); a.mro(3)
+        a.cs(7, S('5')); a.inv(0x6e, g.M('Ljava/lang/String;', 'equals', '(Ljava/lang/Object;)Z'), [7, 3]); a.mr(2); a.b21(0x38, 2, 'te0')
+        cf(5, 0.0)
+        a.L('te0')
     a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [5]); a.mro(5)
     a.cs(7, S('LiveHdrMetadata_manual_ec_short_set')); a.inv(0x72, mput, [6, 7, 5])
     AEM_ = os.environ.get('AEMETER', '1') == '1'
@@ -1465,6 +1494,24 @@ def build_classes3():
         a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [2]); a.mro(3); a.cs(7, S('AEx')); a.inv(0x72, mput, [6, 7, 3])
         cf(5, FL); a.raw(0x2d | 7 << 8, 4 | 5 << 8); a.b21(0x3b, 7, 'aex'); a.raw(0x01 | 4 << 8 | 5 << 12)
         a.L('aex')
+    if os.environ.get('TELENK0', '1') == '1':
+        # P343: no night key on the tele: its shot EV (-0.5 .. -1.5 in dim scenes, EXIF -1.0 EV) kept dim tele shots a
+        #       stop under RawR
+        a.cs(7, S('quadTo')); a.inv(0x72, mget, [6, 7]); a.mro(3)
+        a.cs(7, S('5')); a.inv(0x6e, g.M('Ljava/lang/String;', 'equals', '(Ljava/lang/Object;)Z'), [7, 3]); a.mr(2); a.b21(0x38, 2, 'nkt9')
+        cf(4, 0.0)
+        a.L('nkt9')
+    if float(os.environ.get('HLEV', '1.0')) > 0:
+        # P346: highlight headroom as shot EV (GCam follows the EV, the frame ISO cut alone was lifted back): off +=
+        #       HLEV x log2(AEhs / 256), AEhs = the meter's headroom (clipped share of the raw viewfinder), all lenses
+        HLK = float(os.environ.get('HLEV', '1.0')) / 0.6931472
+        a.cs(7, S('AEhs')); a.inv(0x72, mget, [6, 7]); a.mro(3); a.iof(2, 3, g.T('Ljava/lang/Float;')); a.b21(0x38, 2, 'hl9')
+        a.t21(0x1f, 3, g.T('Ljava/lang/Float;')); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [3]); a.mr(3)
+        cf(2, 1.0 / 256); a.raw(0xc8 | 3 << 8 | 2 << 12)
+        cf(2, 1.0); a.raw(0x2d | 2 << 8, 3 | 2 << 8); a.b21(0x3b, 2, 'hl9')                    # s >= 1: none
+        a.raw(0x89 | 7 << 8 | 3 << 12); a.inv(0x71, g.M('Ljava/lang/Math;', 'log', '(D)D'), [7, 8]); a.raw(0x0b | 7 << 8)
+        a.raw(0x8c | 3 << 8 | 7 << 12); cf(2, HLK); a.raw(0xc8 | 3 << 8 | 2 << 12); a.raw(0xc6 | 4 << 8 | 3 << 12)
+        a.L('hl9')
     sb_new(8); sb_s(8, 9, 'night key ev100='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 1])
     sb_s(8, 9, ' off='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 4])
     sb_s(8, 9, ' user ev='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 0])
@@ -1627,6 +1674,20 @@ def build_classes3():
     a.L('vn1'); sb_s(4, 6, ' ('); a.inv(0x6e, sbI, [4, 8]); sb_s(4, 6, ' mode profiles)'); a.inv(0x6e, sbt, [4]); a.mro(4)
     a.inv(0x6e, gbytes, [4]); a.mro(9)
     sb_new(6); a.inv(0x6e, sbs, [6, 3]); sb_s(6, 7, '.imported'); a.inv(0x6e, sbt, [6]); a.mro(6); a.inv(0x70, m_wr, [10, 6, 9])
+    # P337: float[] dynamic black level (ohv.k, our frames): bl = 64 + (bl - 64) x nightS / 256, in place
+    a.go('ret')                                                                                 # code above falls through to ret
+    a.L('isfa')
+    a.t21(0x1f, 11, g.T('[F'))
+    a.inv(0x71, getp, []); a.mro(4); a.cs(5, S('nightS')); a.inv(0x72, mget, [4, 5]); a.mro(1)
+    a.c16(2, 256); a.iof(3, 1, tINT); a.b21(0x38, 3, 'fa1')
+    a.t21(0x1f, 1, tINT); a.inv(0x6e, ivl, [1]); a.mr(2)
+    a.L('fa1'); a.c16(3, 256); a.b22(0x35, 2, 3, 'ret')                                       # s >= 256: as reported
+    _fb = lambda x: struct.unpack('<I', struct.pack('<f', x))[0]
+    a.raw(0x82 | 2 << 8 | 2 << 12); k_ = _fb(1.0 / 256); a.raw(0x14 | 3 << 8, k_ & 0xffff, k_ >> 16); a.raw(0xc8 | 2 << 8 | 3 << 12)
+    a.raw(0x21 | 6 << 8 | 11 << 12); a.c4(7, 0); k_ = _fb(64.0); a.raw(0x14 | 8 << 8, k_ & 0xffff, k_ >> 16)
+    a.L('fal'); a.b22(0x35, 7, 6, 'ret')
+    a.raw(0x44 | 9 << 8, 11 | 7 << 8); a.raw(0xc7 | 9 << 8 | 8 << 12); a.raw(0xc8 | 9 << 8 | 2 << 12); a.raw(0xc6 | 9 << 8 | 8 << 12)
+    a.raw(0x4b | 9 << 8, 11 | 7 << 8); a.raw(0xd8 | 7 << 8, 7 | 1 << 8); a.go('fal')
     a.L('ret'); a.L('t1'); a.c4(0, 0); a.raw(0x0f | 0 << 8)
     a.L('h'); a.raw(0x0d | 0 << 8)
     sb_new(4); sb_s(4, 6, 'profile err '); a.inv(0x6e, sbo, [4, 0]); log_sb(4)
@@ -2047,7 +2108,7 @@ def build_classes3():
     code_run = (16, 1, 5, a.done())
     # put(Pair[] noise profile, ljm result) <- GCam ohv.k: on quad (RES, props 'quadTo') captures scale S, O
     PR = 'Landroid/util/Pair;'; DBL = 'Ljava/lang/Double;'
-    NZS = float(__import__('os').environ.get('NZS', '0.13')); NZO = float(__import__('os').environ.get('NZO', '0.065'))
+    NZS = float(__import__('os').environ.get('NZS', '0.08')); NZO = float(__import__('os').environ.get('NZO', '0.04'))
     db = lambda f: struct.unpack('<4H', struct.pack('<d', f))
     a = A()                                                    # v11 this, v12 profile, v13 result
     a.iof(0, 12, g.T('[' + PR)); a.b21(0x38, 0, 'nzr')

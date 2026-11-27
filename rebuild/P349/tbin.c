@@ -340,7 +340,13 @@ static float ae_log2(float x) { union { float f; u32 i; } u = { x }; float e = (
     return e + (m - 1.f) * (1.4425f - 0.4425f * (m - 1.f)); }
 static i64 ae_last; static char ae_txt[400]; static float ae_medt, ae_grd, ae_hs = 256.f;
 #ifndef AE_HC
-#define AE_HC 40.f
+#define AE_HC 20.f
+#endif
+#ifndef AE_HK
+#define AE_HK 0.45f                                         /* P346 0.75 -> P347 0.45 */
+#endif
+#ifndef AE_HMIN
+#define AE_HMIN 30                                          /* P347: clipped per 10000 ignored (single bulbs) */
 #endif
 #ifndef AE_HMAX
 #define AE_HMAX 1.0f
@@ -387,7 +393,7 @@ static const char* ae_meter(const u16* s, int rs, int w, int h, i64 now) {
       float gd = ae_log2(0.84f / p99); ae_grd = gd > 0.f ? 0.f : (gd < AE_GMIN ? AE_GMIN : gd); }
     /* P315 highlight headroom: clipped share of the viewfinder raw -> lower the 50/25 MP frame ISO (GCam lifts the image
        back to its plan, the clipped glow keeps its gradient). 0.5 x log2(1 + clip/AE_HC) EV, <= AE_HMAX, from 0.1 % clipped */
-    { int c10 = clip * 10000 / n; float hl = c10 < 10 ? 0.f : 0.5f * ae_log2(1.f + (float)c10 / AE_HC); if (hl > AE_HMAX) hl = AE_HMAX;
+    { int c10 = clip * 10000 / n; float hl = c10 <= AE_HMIN ? 0.f : AE_HK * ae_log2(1.f + (float)(c10 - AE_HMIN) / AE_HC); if (hl > AE_HMAX) hl = AE_HMAX;
       float e = -hl, m = 1.f; while (e <= -1.f) { m *= 0.5f; e += 1.f; } m *= 1.f + e * (0.6931f + e * 0.1931f);  /* 2^e, e in (-1, 0] */
       ae_hs = 256.f * m; }
     char* o = ae_txt;
