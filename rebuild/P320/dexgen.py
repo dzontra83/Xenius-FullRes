@@ -309,6 +309,31 @@ def build_classes3():
         a.inv(0x71, g.M('Ljava/lang/Thread;', 'setDefaultUncaughtExceptionHandler', '(' + UEH + ')V'), [3])
         sb_new(6); sb_s(6, 7, 'start '); a.inv(0x71, lm, []); a.mro(7); a.inv(0x6e, sbs, [6, 7]); log_sb(6)
         a.L('uehok')
+    if __import__('os').environ.get('AEMETER', '1') == '1':
+        # ---- P310: Pair(image, image) from Llet.<init> (every RAW16 frame): viewfinder AE meter, log only ----
+        PAIR = 'Landroid/util/Pair;'
+        a.iof(0, 12, g.T(PAIR)); a.b21(0x38, 0, 'aem0')
+        a.raw(0x54 | 2 << 8 | 12 << 12, g.Fd(PAIR, 'first', OBJ))              # iget-object v2, v12, Pair.first
+        a.iof(0, 2, tIMG); a.b21(0x38, 0, 'null'); a.t21(0x1f, 2, tIMG)
+        a.inv(0x6e, gp, [2]); a.mro(3); a.c4(4, 0); a.raw(0x46 | 3 << 8, 3 | 4 << 8)       # aget-object v3, v3, v4
+        a.inv(0x6e, grs, [3]); a.mr(4); a.inv(0x6e, gbuf, [3]); a.mro(3)
+        a.inv(0x6e, gw, [2]); a.mr(5); a.inv(0x6e, gh, [2]); a.mr(6)
+        a.inv(0x71, nano, []); a.mrw(7)
+        a.invr(0x77, g.M(NCL, 'e', '(' + BB + 'IIIJ)' + STR), 3, 6); a.mro(9)
+        a.b21(0x38, 9, 'null')
+        # P311: meter terms -> props 'AEmed' / 'AEgrd' (Float EV), read by the night key at the shot
+        a.inv(0x71, getp, []); a.mro(8)
+        for k_, key_ in ((0, 'AEmed'), (1, 'AEgrd'), (2, 'AEhs')):
+            a.c4(10, k_); a.inv(0x71, g.M(NCL, 'g', '(I)F'), [10]); a.mr(10)
+            a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [10]); a.mro(10)
+            a.cs(11, S(key_)); a.inv(0x72, mput, [8, 11, 10])
+        sb_new(10); a.inv(0x6e, sbs, [10, 9])
+        a.inv(0x71, getp, []); a.mro(8)
+        sb_s(10, 11, ' | cam iso='); a.cs(11, S('ISOSpeedLatitudezzz')); a.inv(0x72, mget, [8, 11]); a.mro(11); a.inv(0x6e, sbo, [10, 11])
+        sb_s(10, 11, ' t_ns='); a.cs(11, S('ExposureTime')); a.inv(0x72, mget, [8, 11]); a.mro(11); a.inv(0x6e, sbo, [10, 11])
+        sb_s(10, 11, ' quadOn='); a.cs(11, S('quadOn')); a.inv(0x72, mget, [8, 11]); a.mro(11); a.inv(0x6e, sbo, [10, 11])
+        log_sb(10); a.go('null')
+        a.L('aem0')
     # ---- quad 50 MP main (native sensor mode 3), marker props 'quadTo' set by the session build ----
     REM3 = __import__('os').environ.get('NO200', '1') == '1' and __import__('os').environ.get('REM3', '1') == '1'
     QKEY = S('quadTo'); BLD = 'Landroid/hardware/camera2/CaptureRequest$Builder;'; RKEY = 'Landroid/hardware/camera2/CaptureRequest$Key;'
@@ -334,6 +359,23 @@ def build_classes3():
     a.cs(1, S('TBQ')); a.inv(0x72, mrem, [5, 1])                                      # new shot: no stale paced queue
     a.cs(1, S('TBramp')); a.inv(0x72, mrem, [5, 1])                                   # P287: no stale warm-up ramp
     a.cs(1, S('nightS')); a.inv(0x72, mrem, [5, 1])                                   # P261: new shot: no night scale
+    if __import__('os').environ.get('AEMETER', '1') == '1':
+        MK = float(__import__('os').environ.get('AEMERGEK', '1.0'))
+        FLT2 = g.T('Ljava/lang/Float;')
+        a.cs(1, S('AEx')); a.inv(0x72, mget, [5, 1]); a.mro(0); a.iof(1, 0, FLT2); a.b21(0x38, 1, 'aem9')
+        a.t21(0x1f, 0, FLT2); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [0]); a.mr(0)
+        a.raw(0x89 | 0 << 8 | 0 << 12)                                                        # v0:v1 = (double) AEx
+        k_ = struct.unpack('<4H', struct.pack('<d', MK * 0.6931471805599453))
+        a.raw(0x18 | 2 << 8, *k_); a.raw(0xcd | 0 << 8 | 2 << 12)                            # x ln2 x K
+        a.inv(0x71, g.M('Ljava/lang/Math;', 'exp', '(D)D'), [0, 1]); a.mrw(0)
+        k_ = struct.unpack('<4H', struct.pack('<d', 256.0)); a.raw(0x18 | 2 << 8, *k_); a.raw(0xcd | 0 << 8 | 2 << 12)
+        a.raw(0x8a | 0 << 8 | 0 << 12)                                                        # v0 = (int)
+        a.c16(1, 255); a.b22(0x35, 0, 1, 'aem9')                                             # >= 255: no scale
+        a.c16(1, 96); a.b22(0x35, 0, 1, 'aem8'); a.raw(0x01 | 0 << 8 | 1 << 12)              # >= 96 (-1.4 EV)
+        a.L('aem8')
+        a.inv(0x71, ivo, [0]); a.mro(0); a.cs(1, S('nightS')); a.inv(0x72, mput, [5, 1, 0])
+        sb_new(6); sb_s(6, 7, 'own AE merge scale s256='); a.inv(0x6e, sbo, [6, 0]); log_sb(6)
+        a.L('aem9')
     a.cs(1, S('TBNOIS')); a.inv(0x72, mrem, [5, 1])
     a.cs(1, S('getWidth')); a.inv(0x71, g.M('LMC/pref;', 'MenuValue', '(' + STR + ')I'), [1]); a.mr(1)   # P272: RES button 25 MP
     a.b21(0x38, 1, 'r25off'); a.cs(1, S('TB25')); a.inv(0x72, mput, [5, 1, 1]); a.go('r25end')
@@ -438,6 +480,23 @@ def build_classes3():
     a.L('mc2'); a.raw(0x17 | 6 << 8, 100000 & 0xffff, 100000 >> 16); a.raw(0x31 | 1 << 8, 10 | 6 << 8)
     a.b21(0x3b, 1, 'mset'); a.raw(0x04 | 10 << 8 | 6 << 12)                                       # >= 0.1 ms
     a.L('mset')
+    if __import__('os').environ.get('AEMETER', '1') == '1' and __import__('os').environ.get('AEHEAD', '1') == '1':
+        # P315: highlight headroom from the meter (props 'AEhs', Float s256 < 256): ISO x s / 256 (>= 50), else shorter frame
+        FLT3 = g.T('Ljava/lang/Float;')
+        a.inv(0x71, getp, []); a.mro(3); a.cs(1, S('AEhs')); a.inv(0x72, mget, [3, 1]); a.mro(3)
+        a.iof(1, 3, FLT3); a.b21(0x38, 1, 'hd9')
+        a.t21(0x1f, 3, FLT3); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [3]); a.mr(3)
+        a.raw(0x87 | 3 << 8 | 3 << 12)                                                          # v3 = s256 (int)
+        a.c16(1, 255); a.b22(0x35, 3, 1, 'hd9'); a.c16(1, 64); a.b22(0x35, 3, 1, 'hd1'); a.raw(0x01 | 3 << 8 | 1 << 12)
+        a.L('hd1')
+        a.raw(0x92 | 1 << 8, 4 | 3 << 8); a.raw(0xd3 | 1 << 8 | 1 << 12, 256)                  # v1 = ISO x s / 256
+        a.c16(6, 50); a.b22(0x34, 1, 6, 'hd2'); a.raw(0x01 | 4 << 8 | 1 << 12); a.go('hd8')     # ISO >= 50
+        a.L('hd2')                                                                                # else exposure x s / 256
+        a.raw(0x81 | 6 << 8 | 3 << 12); a.raw(0xbd | 10 << 8 | 6 << 12)
+        a.raw(0x16 | 6 << 8, 256); a.raw(0xbe | 10 << 8 | 6 << 12)
+        a.L('hd8')
+        sb_s(2, 1, ' head='); a.inv(0x6e, sbI, [2, 3])
+        a.L('hd9')
     a.raw(0x62 | 1 << 8, g.Fd(CRQ, 'SENSOR_EXPOSURE_TIME', RKEY))
     a.inv(0x71, g.M(LNG, 'valueOf', '(J)' + LNG), [10, 11]); a.mro(3)
     a.inv(0x6e, g.M(BLD, 'set', '(' + RKEY + OBJ + ')V'), [12, 1, 3])
@@ -1187,7 +1246,7 @@ def build_classes3():
                           ('w', '()V', 0x109, None), ('f', '()I', 0x109, None),
                           ('q', '(' + BB + 'III' + BB + ')I', 0x109, None), ('a', '()' + BB, 0x109, None),
                           ('r', '(' + BB + ')I', 0x109, None), ('s', '()' + STR, 0x109, None),
-                          ('n', '(II)V', 0x109, None), ('p', '(' + BB + 'I)I', 0x109, None), ('d', '()I', 0x109, None)])
+                          ('n', '(II)V', 0x109, None), ('p', '(' + BB + 'I)I', 0x109, None), ('d', '()I', 0x109, None), ('e', '(' + BB + 'IIIJ)' + STR, 0x109, None), ('g', '(I)F', 0x109, None)])
     code_winit = (1, 1, 1, [0x1070, oinit, 0, 0x000e])
     code_wrun = (1, 1, 0, [0x0071, nw, 0, 0x000e])
     g.cls(WCL, OBJ, 0x1, [('<init>', '()V', 0x10001, code_winit)], [('run', '()V', 0x1, code_wrun)], [RUN])
@@ -1300,7 +1359,20 @@ def build_classes3():
     #       GCam may lift shadows locally (subject in a dim room) instead of us brightening the whole frame (wall blown).
     #       Read by the LiveHdrMetadata hook in classes.dex (props key = an existing classes.dex string).
     HB = float(os.environ.get('HDRCAP', '1.5')); HD = float(os.environ.get('HDRCAPD', '3.5'))
-    cf(5, HD - HB); a.raw(0xc8 | 5 << 8 | 4 << 12); cf(6, HB); a.raw(0xc6 | 5 << 8 | 6 << 12)  # v5 = cap
+    cf(5, HD - HB); a.raw(0xc8 | 5 << 8 | 4 << 12)                                             # v5 = (HD - HB) s
+    if os.environ.get('AEMETER', '1') == '1':
+        # P312: the meter's median term also scales the dim-scene shadow lift: k = 1 + AEmed x AECAPK (0..1); a room that is
+        #       already bright enough (AEmed -1) gets cap HB, so the darker shot EV is not lifted back by HDR+
+        CK = float(os.environ.get('AECAPK', '1.0'))
+        FLT_ = g.T('Ljava/lang/Float;')
+        a.inv(0x71, getp, []); a.mro(6); a.cs(7, S('AEmed')); a.inv(0x72, mget, [6, 7]); a.mro(2)
+        a.iof(3, 2, FLT_); a.b21(0x38, 3, 'ck0')
+        a.t21(0x1f, 2, FLT_); a.inv(0x6e, g.M('Ljava/lang/Float;', 'floatValue', '()F'), [2]); a.mr(2)
+        cf(3, CK); a.raw(0xc8 | 2 << 8 | 3 << 12); cf(3, 1.0); a.raw(0xc6 | 2 << 8 | 3 << 12)     # v2 = 1 + AEmed x CK
+        cf(3, 0.0); a.raw(0x2d | 7 << 8, 2 | 3 << 8); a.b21(0x3b, 7, 'ck1'); a.raw(0x01 | 2 << 8 | 3 << 12)
+        a.L('ck1'); a.raw(0xc8 | 5 << 8 | 2 << 12)                                              # v5 *= k
+        a.L('ck0')
+    cf(6, HB); a.raw(0xc6 | 5 << 8 | 6 << 12)                                                  # v5 = cap
     a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [5]); a.mro(5)
     a.inv(0x71, getp, []); a.mro(6); a.cs(7, S('LiveHdrMetadata_max_hdr_ratio_override_set')); a.inv(0x72, mput, [6, 7, 5])
     # P305: GCam's dual-exposure 'short' (highlight) compensation, EV: 0 in bright light .. ECSHORT (-0.5) in dim scenes,
@@ -1309,10 +1381,28 @@ def build_classes3():
     cf(5, ECS); a.raw(0xc8 | 5 << 8 | 4 << 12)                                                  # v5 = ECS x s
     a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [5]); a.mro(5)
     a.cs(7, S('LiveHdrMetadata_manual_ec_short_set')); a.inv(0x72, mput, [6, 7, 5])
+    AEM_ = os.environ.get('AEMETER', '1') == '1'
+    if AEM_: a.raw(0x01 | 9 << 8 | 4 << 12)                                                  # v9 = s
     cf(2, NB - ND); a.raw(0xc8 | 4 << 8 | 2 << 12); cf(2, -NB); a.raw(0xc6 | 4 << 8 | 2 << 12)   # v4 = off = -NB + (NB-ND) s
+    if os.environ.get('AEMETER', '1') == '1':
+        # P311 own AE: extra = min(AEmed x s, min(0, AEgrd - off)); off += extra; off >= AEFLOOR. s = smoothstep (v10 copy)
+        FL = float(os.environ.get('AEFLOOR', '-1.5'))
+        FLT = g.T('Ljava/lang/Float;'); fv = g.M('Ljava/lang/Float;', 'floatValue', '()F')
+        a.cs(7, S('AEx')); a.inv(0x72, mrem, [6, 7])
+        a.cs(7, S('AEmed')); a.inv(0x72, mget, [6, 7]); a.mro(2); a.iof(3, 2, FLT); a.b21(0x38, 3, 'aex')
+        a.t21(0x1f, 2, FLT); a.inv(0x6e, fv, [2]); a.mr(2); a.raw(0xc8 | 2 << 8 | 9 << 12)        # v2 = AEmed x s
+        a.cs(7, S('AEgrd')); a.inv(0x72, mget, [6, 7]); a.mro(3); a.iof(5, 3, FLT); a.b21(0x38, 5, 'aeadd')
+        a.t21(0x1f, 3, FLT); a.inv(0x6e, fv, [3]); a.mr(3); a.raw(0xc7 | 3 << 8 | 4 << 12)         # v3 = AEgrd - off
+        cf(5, 0.0); a.raw(0x2d | 7 << 8, 3 | 5 << 8); a.b21(0x3d, 7, 'aeg1'); a.raw(0x01 | 3 << 8 | 5 << 12)   # min(0, .)
+        a.L('aeg1'); a.raw(0x2d | 7 << 8, 2 | 3 << 8); a.b21(0x3d, 7, 'aeadd'); a.raw(0x01 | 2 << 8 | 3 << 12)  # min(med, grd)
+        a.L('aeadd'); a.raw(0xc6 | 4 << 8 | 2 << 12)                                                # off += extra
+        a.inv(0x71, g.M('Ljava/lang/Float;', 'valueOf', '(F)Ljava/lang/Float;'), [2]); a.mro(3); a.cs(7, S('AEx')); a.inv(0x72, mput, [6, 7, 3])
+        cf(5, FL); a.raw(0x2d | 7 << 8, 4 | 5 << 8); a.b21(0x3b, 7, 'aex'); a.raw(0x01 | 4 << 8 | 5 << 12)
+        a.L('aex')
     sb_new(8); sb_s(8, 9, 'night key ev100='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 1])
     sb_s(8, 9, ' off='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 4])
-    sb_s(8, 9, ' user ev='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 0]); log_sb(8)
+    sb_s(8, 9, ' user ev='); a.inv(0x6e, g.M(SB, 'append', '(F)' + SB), [8, 0])
+    sb_s(8, 9, ' cap='); a.inv(0x71, getp, []); a.mro(5); a.cs(9, S('LiveHdrMetadata_max_hdr_ratio_override_set')); a.inv(0x72, mget, [5, 9]); a.mro(5); a.inv(0x6e, sbo, [8, 5]); log_sb(8)
     a.raw(0xc6 | 0 << 8 | 4 << 12)                                                             # ev += off
     a.L('fret'); cf(2, 1000.0); a.raw(0xc8 | 0 << 8 | 2 << 12); a.raw(0x87 | 0 << 8 | 0 << 12); a.raw(0x0f | 0 << 8)
     a.L('isint')
@@ -1326,6 +1416,9 @@ def build_classes3():
     a.inv(0x71, g.M('Landroid/os/Environment;', 'getExternalStorageDirectory', '()' + FILE), []); a.mro(3)
     sb_new(4); a.inv(0x6e, sbo, [4, 3]); sb_s(4, 5, '/LMC8.3/XML/auto/'); a.inv(0x6e, sbt, [4]); a.mro(3)   # v3 = dir
     a.t21(0x22, 4, g.T(FILE)); a.inv(0x70, newf, [4, 3]); a.inv(0x6e, g.M(FILE, 'mkdirs', '()Z'), [4])
+    a.c16(4, 93); a.b22(0x32, 0, 4, 'xmll')                                                  # P318: Aperture = XML list
+    a.c16(4, 95); a.b22(0x32, 0, 4, 'isrc')                                                  # P316: XML import fix
+    a.c16(4, 94); a.b22(0x32, 0, 4, 'itoast')
     a.c16(4, 99); a.b22(0x32, 0, 4, 'commit')
     a.c16(4, 98); a.b22(0x32, 0, 4, 'imp')
     a.c16(4, 96); a.b22(0x34, 0, 4, 'ntap')                                                 # P282: 96 / 97 shutter tap log
@@ -1353,15 +1446,71 @@ def build_classes3():
     a.c4(7, 0); a.b21(0x38, 5, 'cb'); a.t21(0x1f, 5, g.T(STR)); a.inv(0x70, m_rd, [10, 5]); a.mro(7)
     a.L('cb'); a.b21(0x39, 7, 'cb2'); a.inv(0x70, m_rd, [10, 2]); a.mro(7); a.b21(0x38, 7, 'ret')
     a.L('cb2'); a.c4(8, 0); a.go('fin')
+    # ---- P316: LMC's config load copies the chosen XML over the settings file, then (onRestart -> apply) saves
+    #      'pref_config_show' with apply(), which writes the OLD in-memory settings back over the copy -> the first import
+    #      did nothing (the second worked because the flag was already set, so apply() had nothing to write).
+    #      95 (before the copy, arg2 = chosen file): remember it + commit the flag now, synchronously.
+    #      98: base = the chosen file itself, written over the settings after LMC's write, verified 3 x;
+    #      a note for the next start. 94 (Upscale button init after restart): toast the note. ----
+    SLEEP = g.M('Ljava/lang/Thread;', 'sleep', '(J)V'); PMN = 'Landroid/preference/PreferenceManager;'
+    SPR = 'Landroid/content/SharedPreferences;'; SPE = 'Landroid/content/SharedPreferences$Editor;'
+    a.L('xmll')
+    a.b21(0x38, 12, 'ret'); a.t21(0x1f, 12, g.T('Landroid/view/View;'))
+    a.inv(0x71, g.M('LTBXL;', 'show', '(Landroid/view/View;)V'), [12]); a.go('ret')
+    a.L('isrc')
+    a.b21(0x38, 12, 'isrc1'); a.inv(0x71, getp, []); a.mro(4); a.cs(6, S('TBIMPSRC')); a.inv(0x72, mput, [4, 6, 12])
+    a.L('isrc1')
+    a.inv(0x71, g.M(PMN, 'getDefaultSharedPreferences', '(' + CTXT + ')' + SPR), [1]); a.mro(4)
+    a.inv(0x72, g.M(SPR, 'edit', '()' + SPE), [4]); a.mro(4)
+    a.cs(6, S('pref_config_show')); a.c4(7, 1); a.inv(0x72, g.M(SPE, 'putBoolean', '(' + STR + 'Z)' + SPE), [4, 6, 7]); a.mro(4)
+    a.inv(0x72, g.M(SPE, 'commit', '()Z'), [4])
+    sb_new(4); sb_s(4, 6, 'xml import selected '); a.inv(0x6e, sbo, [4, 12]); log_sb(4); a.go('ret')
+    a.L('itoast')
+    sb_new(4); a.inv(0x6e, sbs, [4, 3]); sb_s(4, 6, '.imported'); a.inv(0x6e, sbt, [4]); a.mro(5)
+    a.inv(0x70, m_rd, [10, 5]); a.mro(7); a.b21(0x38, 7, 'ret')
+    a.t21(0x22, 4, g.T(FILE)); a.inv(0x70, newf, [4, 5]); a.inv(0x6e, g.M(FILE, 'delete', '()Z'), [4])
+    a.inv(0x71, g.M('LMC/main;', 'getToast', '(' + STR + ')V'), [7])
+    sb_new(4); sb_s(4, 6, 'toast: '); a.inv(0x6e, sbs, [4, 7]); log_sb(4); a.go('ret')
     a.L('imp'); a.c4(5, 0)
-    a.raw(0x16 | 8 << 8, 400); a.inv(0x71, g.M('Ljava/lang/Thread;', 'sleep', '(J)V'), [8, 9])   # let LMC's async prefs write land first
-    a.inv(0x70, m_rd, [10, 2]); a.mro(7); a.b21(0x38, 7, 'ret')
+    a.raw(0x16 | 8 << 8, 400); a.inv(0x71, SLEEP, [8, 9])                                       # let LMC's async prefs write land first
+    a.inv(0x71, getp, []); a.mro(4); a.cs(6, S('TBIMPSRC')); a.inv(0x72, mrem, [4, 6]); a.mro(5)
+    a.b21(0x38, 5, 'imp0'); a.t21(0x1f, 5, g.T(STR)); a.inv(0x70, m_rd, [10, 5]); a.mro(7); a.b21(0x39, 7, 'imp1')
+    a.L('imp0'); a.inv(0x70, m_rd, [10, 2]); a.mro(7); a.b21(0x38, 7, 'ret')
+    a.L('imp1')
     a.inv(0x70, m_unp, [10, 7, 3]); a.mr(8)
     a.L('fin')                                                                               # v7 base, v8 unpacked count
+    # P320: the XML loader switch is global: the profile / imported base gets the current settings' value
+    MAT_ = 'Ljava/util/regex/Matcher;'; PAT_ = 'Ljava/util/regex/Pattern;'
+    a.cs(6, S('<boolean name="pref_show_button_aperture"[^>]*>\\s*'))
+    a.inv(0x71, g.M(PAT_, 'compile', '(' + STR + ')' + PAT_), [6]); a.mro(6)
+    a.cs(9, S('')); a.inv(0x70, m_rd, [10, 2]); a.mro(4); a.b21(0x38, 4, 'gl0')
+    a.inv(0x6e, g.M(PAT_, 'matcher', '(Ljava/lang/CharSequence;)' + MAT_), [6, 4]); a.mro(4)
+    a.inv(0x6e, g.M(MAT_, 'find', '()Z'), [4]); a.mr(1); a.b21(0x38, 1, 'gl0')
+    a.inv(0x6e, g.M(MAT_, 'group', '()' + STR), [4]); a.mro(9)
+    a.L('gl0')
+    a.inv(0x6e, g.M(PAT_, 'matcher', '(Ljava/lang/CharSequence;)' + MAT_), [6, 7]); a.mro(4)
+    a.cs(6, S('')); a.inv(0x6e, g.M(MAT_, 'replaceAll', '(' + STR + ')' + STR), [4, 6]); a.mro(7)
+    sb_new(4); a.inv(0x6e, sbs, [4, 9]); sb_s(4, 6, '</map>'); a.inv(0x6e, sbt, [4]); a.mro(4)
+    a.cs(6, S('</map>')); a.inv(0x6e, g.M(STR, 'replace', '(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)' + STR), [7, 6, 4]); a.mro(7)
     a.inv(0x70, m_st, [10, 7]); a.mro(7); a.inv(0x70, m_inj, [10, 7, 3]); a.mro(7)
     a.inv(0x6e, gbytes, [7]); a.mro(9); a.inv(0x70, m_wr, [10, 2, 9])
     sb_new(4); sb_s(4, 6, 'profile commit code='); a.inv(0x6e, sbI, [4, 0]); sb_s(4, 6, ' unpacked='); a.inv(0x6e, sbI, [4, 8])
     sb_s(4, 6, ' bytes='); a.raw(0x21 | 9 << 8 | 9 << 12); a.inv(0x6e, sbI, [4, 9]); sb_s(4, 6, ' base='); a.inv(0x6e, sbo, [4, 5]); log_sb(4)
+    a.c16(4, 98); a.b22(0x33, 0, 4, 'ret')
+    for k_ in range(3):                                                                       # P316: verify the import stuck
+        a.raw(0x16 | 11 << 8, 250); a.inv(0x71, SLEEP, [11, 12])                             # v8 = profile count
+        a.inv(0x70, m_rd, [10, 2]); a.mro(4); a.b21(0x38, 4, 'vw%d' % k_)
+        a.inv(0x6e, g.M(STR, 'equals', '(' + OBJ + ')Z'), [7, 4]); a.mr(4); a.b21(0x39, 4, 'vok')
+        a.L('vw%d' % k_); a.inv(0x6e, gbytes, [7]); a.mro(9); a.inv(0x70, m_wr, [10, 2, 9])
+        sb_new(4); sb_s(4, 6, 'xml import re-written (LMC overwrote it)'); log_sb(4)
+    a.L('vok')
+    sb_new(4); sb_s(4, 6, 'XML loaded: ')
+    a.b21(0x38, 5, 'vn0'); a.t21(0x1f, 5, g.T(STR)); a.t21(0x22, 6, g.T(FILE)); a.inv(0x70, newf, [6, 5]); a.inv(0x6e, g.M(FILE, 'getName', '()' + STR), [6]); a.mro(6)
+    a.inv(0x6e, sbs, [4, 6]); a.go('vn1')
+    a.L('vn0'); sb_s(4, 6, 'settings')
+    a.L('vn1'); sb_s(4, 6, ' ('); a.inv(0x6e, sbI, [4, 8]); sb_s(4, 6, ' mode profiles)'); a.inv(0x6e, sbt, [4]); a.mro(4)
+    a.inv(0x6e, gbytes, [4]); a.mro(9)
+    sb_new(6); a.inv(0x6e, sbs, [6, 3]); sb_s(6, 7, '.imported'); a.inv(0x6e, sbt, [6]); a.mro(6); a.inv(0x70, m_wr, [10, 6, 9])
     a.L('ret'); a.L('t1'); a.c4(0, 0); a.raw(0x0f | 0 << 8)
     a.L('h'); a.raw(0x0d | 0 << 8)
     sb_new(4); sb_s(4, 6, 'profile err '); a.inv(0x6e, sbo, [4, 0]); log_sb(4)
@@ -1369,6 +1518,86 @@ def build_classes3():
     w = a.done(); L = a.lab
     code_cmp = (13, 3, 4, w, [(L['t0'], L['t1'] - L['t0'], L['h'])])
     code_pinit = (1, 1, 1, [0x1070, oinit, 0, 0x000e])
+    # ---- P318: XML loader on LMC's Aperture button. show(View): /LMC8.3/XML/*.xml sorted, single-choice dialog (current =
+    #      LMC 'installed_config'); onClick: remember, profile helper 95 (chosen file) + 98 (write it over the settings,
+    #      unpack its 12/50/25 profiles, verify, note for the toast), restart CameraActivity, exit. ----
+    XL = 'LTBXL;'; VIEW = 'Landroid/view/View;'; AL = 'Ljava/util/ArrayList;'; ADB = 'Landroid/app/AlertDialog$Builder;'
+    DOC = 'Landroid/content/DialogInterface$OnClickListener;'; CS = 'Ljava/lang/CharSequence;'
+    SPR_ = 'Landroid/content/SharedPreferences;'; SPE_ = 'Landroid/content/SharedPreferences$Editor;'
+    fp = g.Fd(XL, 'p', '[' + STR)
+    a = A()                                   # static show(v15 view): v0..v14
+    a.inv(0x6e, g.M(VIEW, 'getContext', '()' + CTXT), [15]); a.mro(0)
+    a.inv(0x71, g.M('Landroid/os/Environment;', 'getExternalStorageDirectory', '()' + FILE), []); a.mro(1)
+    sb_new(2); a.inv(0x6e, sbo, [2, 1]); a.cs(3, S('/LMC8.3/XML')); a.inv(0x6e, sbs, [2, 3]); a.inv(0x6e, sbt, [2]); a.mro(2)
+    a.t21(0x22, 3, g.T(FILE)); a.inv(0x70, g.M(FILE, '<init>', '(' + STR + ')V'), [3, 2])
+    a.inv(0x6e, g.M(FILE, 'listFiles', '()[' + FILE), [3]); a.mro(4); a.b21(0x38, 4, 'none')
+    a.t21(0x22, 5, g.T('LMC/MainActivity$100000001;')); a.inv(0x70, g.M('LMC/MainActivity$100000001;', '<init>', '()V'), [5])
+    a.inv(0x71, g.M('Ljava/util/Arrays;', 'sort', '([' + OBJ + 'Ljava/util/Comparator;)V'), [4, 5])   # P319: newest first (LMC's order)
+    a.t21(0x22, 5, g.T(AL)); a.inv(0x70, g.M(AL, '<init>', '()V'), [5])
+    a.raw(0x21 | 6 << 8 | 4 << 12); a.c4(7, 0)
+    a.L('lp'); a.b22(0x35, 7, 6, 'done')
+    a.raw(0x46 | 8 << 8, 4 | 7 << 8)                                          # aget-object v8, v4, v7
+    a.inv(0x6e, g.M(FILE, 'isFile', '()Z'), [8]); a.mr(9); a.b21(0x38, 9, 'nx')
+    a.inv(0x6e, g.M(FILE, 'getName', '()' + STR), [8]); a.mro(9)
+    a.inv(0x6e, g.M(STR, 'toLowerCase', '()' + STR), [9]); a.mro(9); a.cs(10, S('.xml'))
+    a.inv(0x6e, g.M(STR, 'endsWith', '(' + STR + ')Z'), [9, 10]); a.mr(9); a.b21(0x38, 9, 'nx')
+    a.inv(0x6e, g.M(FILE, 'getAbsolutePath', '()' + STR), [8]); a.mro(9)
+    a.inv(0x6e, g.M(AL, 'add', '(' + OBJ + ')Z'), [5, 9])
+    a.L('nx'); a.raw(0xd8 | 7 << 8, 7 | 1 << 8); a.go('lp')
+    a.L('done')
+    a.inv(0x6e, g.M(AL, 'size', '()I'), [5]); a.mr(6); a.b21(0x38, 6, 'none')
+    a.raw(0x23 | 7 << 8 | 6 << 12, g.T('[' + STR)); a.inv(0x6e, g.M(AL, 'toArray', '([' + OBJ + ')[' + OBJ), [5, 7])
+    a.raw(0x23 | 8 << 8 | 6 << 12, g.T('[' + STR))
+    a.cs(9, S('settings')); a.c4(10, 0)
+    a.inv(0x6e, g.M(CTXT, 'getSharedPreferences', '(' + STR + 'I)' + SPR_), [0, 9, 10]); a.mro(9)
+    a.cs(10, S('installed_config')); a.c4(11, 0)
+    a.inv(0x72, g.M(SPR_, 'getString', '(' + STR + STR + ')' + STR), [9, 10, 11]); a.mro(9)
+    a.c4(10, -1); a.c4(11, 0)
+    a.L('nl'); a.b22(0x35, 11, 6, 'nd')
+    a.raw(0x46 | 12 << 8, 7 | 11 << 8)                                        # v12 = path
+    a.b21(0x38, 9, 'nc'); a.inv(0x6e, g.M(STR, 'equals', '(' + OBJ + ')Z'), [12, 9]); a.mr(13); a.b21(0x38, 13, 'nc')
+    a.raw(0x01 | 10 << 8 | 11 << 12)
+    a.L('nc')
+    a.t21(0x22, 13, g.T(FILE)); a.inv(0x70, g.M(FILE, '<init>', '(' + STR + ')V'), [13, 12])
+    a.inv(0x6e, g.M(FILE, 'getName', '()' + STR), [13]); a.mro(13)
+    a.inv(0x6e, g.M(STR, 'length', '()I'), [13]); a.mr(14); a.raw(0xd8 | 14 << 8, 14 | (0xfc << 8))   # len - 4
+    a.c4(12, 0); a.inv(0x6e, g.M(STR, 'substring', '(II)' + STR), [13, 12, 14]); a.mro(13)
+    a.raw(0x4d | 13 << 8, 8 | 11 << 8)                                        # aput-object v13, v8, v11
+    a.raw(0xd8 | 11 << 8, 11 | 1 << 8); a.go('nl')
+    a.L('nd')
+    a.t21(0x22, 11, g.T(ADB)); a.inv(0x70, g.M(ADB, '<init>', '(' + CTXT + ')V'), [11, 0])
+    a.cs(12, S('Load XML')); a.inv(0x6e, g.M(ADB, 'setTitle', '(' + CS + ')' + ADB), [11, 12])
+    a.t21(0x22, 12, g.T(XL)); a.inv(0x70, g.M(XL, '<init>', '([' + STR + ')V'), [12, 7])
+    a.inv(0x6e, g.M(ADB, 'setSingleChoiceItems', '([' + CS + 'I' + DOC + ')' + ADB), [11, 8, 10, 12])
+    a.cs(12, S('Cancel')); a.c4(13, 0); a.inv(0x6e, g.M(ADB, 'setNegativeButton', '(' + CS + DOC + ')' + ADB), [11, 12, 13])
+    a.inv(0x6e, g.M(ADB, 'show', '()Landroid/app/AlertDialog;'), [11]); a.raw(0x000e)
+    a.L('none')
+    a.cs(1, S('No .xml files in LMC8.3/XML')); a.inv(0x71, g.M('LMC/main;', 'getToast', '(' + STR + ')V'), [1]); a.raw(0x000e)
+    code_xshow = (16, 1, 4, a.done())
+    a = A()                                   # <init>(v1 this, v2 String[])
+    a.inv(0x70, oinit, [1]); a.raw(0x5b | 2 << 8 | 1 << 12, fp); a.raw(0x000e)
+    code_xinit = (3, 2, 1, a.done())
+    a = A()                                   # onClick(v8 this, v9 dialog, v10 which)
+    a.inv(0x72, g.M('Landroid/content/DialogInterface;', 'dismiss', '()V'), [9])
+    a.raw(0x54 | 0 << 8 | 8 << 12, fp); a.raw(0x46 | 1 << 8, 0 | 10 << 8)    # v1 = p[which]
+    a.inv(0x71, g.M('Landroid/app/AppGlobals;', 'getInitialApplication', '()Landroid/app/Application;'), []); a.mro(2)
+    a.cs(3, S('settings')); a.c4(4, 0); a.inv(0x6e, g.M(CTXT, 'getSharedPreferences', '(' + STR + 'I)' + SPR_), [2, 3, 4]); a.mro(3)
+    a.inv(0x72, g.M(SPR_, 'edit', '()' + SPE_), [3]); a.mro(3); a.cs(4, S('installed_config'))
+    a.inv(0x72, g.M(SPE_, 'putString', '(' + STR + STR + ')' + SPE_), [3, 4, 1]); a.mro(3)
+    a.inv(0x72, g.M(SPE_, 'commit', '()Z'), [3])
+    a.t21(0x22, 4, g.T(PW)); a.inv(0x70, g.M(PW, '<init>', '()V'), [4])
+    a.c16(5, 95); a.inv(0x71, g.M('Ljava/lang/Integer;', 'valueOf', '(I)Ljava/lang/Integer;'), [5]); a.mro(5)
+    a.inv(0x6e, g.M(PW, 'compare', '(' + OBJ + OBJ + ')I'), [4, 5, 1])
+    a.c16(5, 98); a.inv(0x71, g.M('Ljava/lang/Integer;', 'valueOf', '(I)Ljava/lang/Integer;'), [5]); a.mro(5); a.c4(6, 0)
+    a.inv(0x6e, g.M(PW, 'compare', '(' + OBJ + OBJ + ')I'), [4, 5, 6])
+    CAM = 'Lcom/google/android/apps/camera/legacy/app/activity/main/CameraActivity;'; INT_ = 'Landroid/content/Intent;'
+    a.t21(0x1c, 5, g.T(CAM)); a.t21(0x22, 6, g.T(INT_)); a.inv(0x70, g.M(INT_, '<init>', '(' + CTXT + 'Ljava/lang/Class;)V'), [6, 2, 5])
+    a.c32(5, 0x10000000 | 0x8000); a.inv(0x6e, g.M(INT_, 'addFlags', '(I)' + INT_), [6, 5])
+    a.inv(0x6e, g.M(CTXT, 'startActivity', '(' + INT_ + ')V'), [2, 6])
+    a.c4(5, 0); a.inv(0x71, g.M('Ljava/lang/System;', 'exit', '(I)V'), [5]); a.raw(0x000e)
+    code_xclick = (11, 3, 3, a.done())
+    g.cls(XL, OBJ, 0x1, [('<init>', '([' + STR + ')V', 0x10001, code_xinit), ('show', '(' + VIEW + ')V', 0x9, code_xshow)],
+          [('onClick', '(Landroid/content/DialogInterface;I)V', 0x1, code_xclick)], [DOC], [('p', '[' + STR)])
     # ---- P277: gyro steadiness -> longer frames when the phone is still. LTBGyro listens to the gyroscope
     #      (SENSOR_DELAY_GAME), keeps an average angular speed (rad/s) in props 'TBgyro'. LTBGyro.s() at each new shot:
     #      speed < threshold (tele / teleconverter stricter) -> 'TBlong' = LONGEXP2, else LONGEXP. ----

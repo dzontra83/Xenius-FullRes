@@ -1125,6 +1125,18 @@ static float pm_detail(int x, int y, float v, float g) {
     }
     return v + g * MG_SHP * (v - s * (1.f / 16.f));   /* P257: tapered by the merged weight */
 }
+/* P314: output scale sc with a highlight knee: x = (v - 64) / 959, f = sc x + (1 - sc) x smoothstep((x - K) / (1 - K)),
+   so f(1) = 1: clipped and near-clip pixels stay at the white level (GCam's saturation handling keeps light sources
+   white instead of pink); midtones get the full scale. Monotone for sc in (0, 1). */
+#ifndef PM_KNEE
+#define PM_KNEE 0.6f
+#endif
+static inline float pm_knee(float v, float sc) {
+    float x = (v - 64.f) * (1.f / 959.f); if (x <= 0.f) return 64.f + (v - 64.f) * sc;
+    float t = (x - PM_KNEE) * (1.f / (1.f - PM_KNEE)); t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
+    float w = t * t * (3.f - 2.f * t);
+    return 64.f + 959.f * (sc * x + (1.f - sc) * x * w);
+}
 static void pm_fin(int ty) {                                /* result -> frame 0 and the kept copy */
     int w = mg.w, h = mg.h, w0 = mg.w0;
     int y0 = ty * MG_T, y1 = y0 + MG_T > h ? h : y0 + MG_T;
@@ -1145,9 +1157,9 @@ static void pm_fin(int ty) {                                /* result -> frame 0
                 float W = q[MG_KR ? x : x >> 1], v = a[x] / W;
                 if (!MG_KR && MG_LOWT > 0 && W < T) v = pm_lowdn(x, y, v, W, 0.5f * (T - W) / T, &nlow);   /* P258: at most half */
                 if (!MG_KR && MG_SHP > 0) { float g = W / (0.75f * (float)pm.nmerged); v = pm_detail(x, y, v, g > 1.f ? 1.f : g); }
-                if (sc < 1.f) v = 64.f + (v - 64.f) * sc;
+                if (sc < 1.f) v = pm_knee(v, sc);
                 int iv = (int)(v + d + 0.5f); r = iv < 0 ? 0 : (iv > 1023 ? 1023 : iv);
-            } else if (sc < 1.f) r = (int)(64.f + (float)(r - 64) * sc + 0.5f);   /* clipped: same scale (no step) */
+            }                                      /* clipped: stays clipped (P314: scaled clipped pixels turned pink) */
             }
             o[x] = (u16)r;
         }

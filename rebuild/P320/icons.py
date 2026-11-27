@@ -17,6 +17,14 @@ def vec(tmpl,glyph):
     for e,pd in ((3,glyph),(4,'M0,0'),(5,'M0,0')):
         b=set_attr(b,e,'pathData',3,idx[pd],idx[pd])
     return b
+FOLDER='M7.6,8.4h3.6l1.3,1.4h4.9a0.9,0.9 0 0,1 0.9,0.9v5.6a0.9,0.9 0 0,1 -0.9,0.9h-9.8a0.9,0.9 0 0,1 -0.9,-0.9v-7a0.9,0.9 0 0,1 0.9,-0.9z'
+def xml_loader_pref(b):
+    b,idx=add_strings(b,['XML loader'])
+    strs,ev=parse(b); st=[e for e in ev if e[0]=='start']
+    for i,(k,n,a,o) in enumerate(st):
+        if [r for an,dt,d,r,_ in a if an=='key']==['pref_show_button_aperture']:
+            b=set_attr(b,i,'title',3,idx['XML loader'],idx['XML loader']); b=set_attr(b,i,'icon',1,0x7f0803fe)
+    return b
 def png_r():
     import subprocess
     svg='<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72"><rect x="6.25" y="6.25" width="59.5" height="59.5" rx="15" fill="none" stroke="#556666" stroke-width="6.5"/><g transform="translate(36,36) scale(2.7) translate(-12.55,-12.45)"><path fill="#556666" d="%s"/></g></svg>'%SPLIT
@@ -25,7 +33,9 @@ def png(kind):
     if kind=='split': return png_r()
     S=288; im=Image.new('RGBA',(S,S),(0,0,0,0)); d=ImageDraw.Draw(im); col=(85,102,102,255)
     d.rounded_rectangle((12,12,S-12,S-12),radius=64,outline=col,width=26)
-    if kind=='motion':
+    if kind=='folder':
+        d.rounded_rectangle((62,84,130,120),radius=12,fill=col); d.rounded_rectangle((62,104,226,206),radius=14,fill=col)
+    elif kind=='motion':
         d.ellipse((150,104,230,184),fill=col)
         for y,x0 in ((100,66),(136,48),(172,66)): d.rounded_rectangle((x0,y,134,y+18),radius=9,fill=col)
     elif kind=='split':
@@ -73,10 +83,14 @@ def resources(z,compare=False,rem3=False):
         r['res/drawable/aperture_on.xml']=vec(on,text_path('SR'))
         r['res/drawable/upscale_off.xml']=vec(on,text_path('12')); r['res/drawable/upscale_on.xml']=vec(on,text_path('50'))   # P274
         r['res/drawable/aperture_off.xml']=vec(on,text_path('25'))
+        # P319: Aperture button = XML loader: folder glyph (top bar), settings row 'XML loader' with a folder icon
+        #       (unused hsl_hexagon.png slot, 0x7f0803fe)
+        r['res/drawable/apperture24.xml']=vec(on,FOLDER); r['res/drawable/apperture18.xml']=vec(on,FOLDER)
+        r['res/drawable-xxhdpi/hsl_hexagon.png']=png('folder')
         r['res/drawable-xxhdpi/hsl_ldr.png']=png('motion'); r['res/drawable-xxhdpi/hsl_leica.png']=png('split')
-        r['res/xml/camera_preferences.xml']=add_switch(prefs(z.read('res/xml/camera_preferences.xml'),'Remosaic'),
+        r['res/xml/camera_preferences.xml']=xml_loader_pref(add_switch(prefs(z.read('res/xml/camera_preferences.xml'),'Remosaic'),
             'pref_dirty_lens_detector_key','STATISTICS_FACE_DETECT_MODE','Disable face detection',
-            'Faces no longer move focus and exposure')
+            'Faces no longer move focus and exposure'))
         return r
     G=SPLIT if compare else GRID
     r['res/drawable/leica_off.xml']=vec(off,G); r['res/drawable/leica_on.xml']=vec(on,G)

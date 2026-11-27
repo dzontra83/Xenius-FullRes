@@ -332,4 +332,83 @@ __attribute__((visibility("default"))) int Java_TemporalBinning_00024N_f(JNIEnv*
     int dmean = (int)(dsum / ((i64)((OH - 8 + 130) / 131) * ((OW - 8 + 126) / 127)));
     return rc | (dmean & 4095) << 8 | (dmean & 4095) << 20;
 }
+
+/* ---- P310 viewfinder AE meter (log only): RAW16 frame, 4x4 tiles on a ~128x96 grid (layout-agnostic: tile mean and
+   tile max pixel). Black 64, white 1023. Rate limited to one frame per 300 ms. Returns a text line or null. ---- */
+static float ae_log2(float x) { union { float f; u32 i; } u = { x }; float e = (float)(int)((u.i >> 23) & 255) - 127.f;
+    u.i = (u.i & 0x007fffff) | 0x3f800000; float m = u.f; /* m in [1,2) */
+    return e + (m - 1.f) * (1.4425f - 0.4425f * (m - 1.f)); }
+static i64 ae_last; static char ae_txt[400]; static float ae_medt, ae_grd, ae_hs = 256.f;
+#ifndef AE_HC
+#define AE_HC 40.f
+#endif
+#ifndef AE_HMAX
+#define AE_HMAX 1.0f
+#endif
+#ifndef AE_TGT
+#define AE_TGT 0.045f
+#endif
+#ifndef AE_MIN
+#define AE_MIN -1.0f
+#endif
+#ifndef AE_GMIN
+#define AE_GMIN -0.5f
+#endif
+static int ae_hm[1024], ae_hx[1024];
+static int ae_pct(const int* h, int n, int q1000) { int t = (int)((i64)n * q1000 / 1000), c = 0; for (int i = 0; i < 1024; ++i) { c += h[i]; if (c > t) return i; } return 1023; }
+static const char* ae_meter(const u16* s, int rs, int w, int h, i64 now) {
+    if (now - ae_last < 300000000LL && now >= ae_last) return 0;
+    ae_last = now;
+    int rsw = rs / 2; if (w < 64 || h < 64 || rsw < w) return 0;
+    for (int i = 0; i < 1024; ++i) ae_hm[i] = ae_hx[i] = 0;
+    int sx = (w / 128) & ~3, sy = (h / 96) & ~3; if (sx < 4) sx = 4; if (sy < 4) sy = 4;
+    int n = 0, clip = 0; i64 sum = 0, csum = 0; int cn = 0;
+    for (int y = sy / 2 & ~3; y + 4 <= h; y += sy) for (int x = sx / 2 & ~3; x + 4 <= w; x += sx) {
+        int t = 0, mx = 0;
+        for (int j = 0; j < 4; ++j) { const u16* r = s + (i64)(y + j) * rsw + x; for (int i = 0; i < 4; ++i) { int v = r[i]; t += v; if (v > mx) mx = v; } }
+        int m = t >> 4; if (m > 1023) m = 1023; if (mx > 1023) mx = 1023;
+        ae_hm[m]++; ae_hx[mx]++; sum += m; ++n; if (mx >= 1015) ++clip;
+        if (x >= w / 3 && x < 2 * w / 3 && y >= h / 3 && y < 2 * h / 3) { csum += m; ++cn; }
+    }
+    if (n < 100) return 0;
+    float med = (ae_pct(ae_hm, n, 500) + 0.5f - 64.f) / 959.f, avg = ((float)sum / n - 64.f) / 959.f;
+    float ctr = cn ? ((float)csum / cn - 64.f) / 959.f : avg;
+    float p99 = (ae_pct(ae_hx, n, 990) + 0.5f - 64.f) / 959.f, p995 = (ae_pct(ae_hx, n, 995) + 0.5f - 64.f) / 959.f;
+    if (med < 1e-4f) med = 1e-4f; if (avg < 1e-4f) avg = 1e-4f; if (ctr < 1e-4f) ctr = 1e-4f; if (p99 < 1e-4f) p99 = 1e-4f; if (p995 < 1e-4f) p995 = 1e-4f;
+    /* RawR-like rules, EV relative to this frame */
+    float base = ae_log2(0.10f / med);                         /* matrix: median to 0.10 */
+    float need = ae_log2(0.84f / p99) - base;                  /* after base, p99 must sit 0.25 EV below clip */
+    float guard = need >= 0.f ? 0.f : (need < -4.f ? 0.f : (need < -1.5f ? -1.5f : need));
+    float matrix = base + guard;
+    float avgev = ae_log2(0.18f / avg), ctrev = ae_log2(0.18f / ctr), hiev = ae_log2(1.f / p995);
+    if (hiev > 0.f) hiev = 0.f;                                 /* highlight mode: only reports needed darkening */
+    /* P311 capture offset terms (EV, darken only): median above AE_TGT -> down to AE_MIN; p99 above 0.84 -> guard */
+    { float mt = ae_log2(AE_TGT / med); ae_medt = mt > 0.f ? 0.f : (mt < AE_MIN ? AE_MIN : mt);
+      float gd = ae_log2(0.84f / p99); ae_grd = gd > 0.f ? 0.f : (gd < AE_GMIN ? AE_GMIN : gd); }
+    /* P315 highlight headroom: clipped share of the viewfinder raw -> lower the 50/25 MP frame ISO (GCam lifts the image
+       back to its plan, the clipped glow keeps its gradient). 0.5 x log2(1 + clip/AE_HC) EV, <= AE_HMAX, from 0.1 % clipped */
+    { int c10 = clip * 10000 / n; float hl = c10 < 10 ? 0.f : 0.5f * ae_log2(1.f + (float)c10 / AE_HC); if (hl > AE_HMAX) hl = AE_HMAX;
+      float e = -hl, m = 1.f; while (e <= -1.f) { m *= 0.5f; e += 1.f; } m *= 1.f + e * (0.6931f + e * 0.1931f);  /* 2^e, e in (-1, 0] */
+      ae_hs = 256.f * m; }
+    char* o = ae_txt;
+    nz_puts(&o, "ae w="); nz_puti(&o, w); nz_puts(&o, " h="); nz_puti(&o, h);
+    nz_puts(&o, " med="); nz_puti(&o, (i64)(med * 1000)); nz_puts(&o, " avg="); nz_puti(&o, (i64)(avg * 1000));
+    nz_puts(&o, " ctr="); nz_puti(&o, (i64)(ctr * 1000)); nz_puts(&o, " p99="); nz_puti(&o, (i64)(p99 * 1000));
+    nz_puts(&o, " p995="); nz_puti(&o, (i64)(p995 * 1000)); nz_puts(&o, " clip10k="); nz_puti(&o, (i64)clip * 10000 / n);
+    nz_puts(&o, " | ev base="); nz_puti(&o, (i64)(base * 100)); nz_puts(&o, " guard="); nz_puti(&o, (i64)(guard * 100));
+    nz_puts(&o, " matrix="); nz_puti(&o, (i64)(matrix * 100)); nz_puts(&o, " avgm="); nz_puti(&o, (i64)(avgev * 100));
+    nz_puts(&o, " ctrm="); nz_puti(&o, (i64)(ctrev * 100)); nz_puts(&o, " high="); nz_puti(&o, (i64)(hiev * 100));
+    nz_puts(&o, " | xmed="); nz_puti(&o, (i64)(ae_medt * 100)); nz_puts(&o, " xgrd="); nz_puti(&o, (i64)(ae_grd * 100)); nz_puts(&o, " hs256="); nz_puti(&o, (i64)ae_hs);
+    *o = 0; return ae_txt;
+}
+/* N.g(k): P311 last meter term, k 0 = median term, 1 = highlight guard (EV) */
+__attribute__((visibility("default"))) float Java_TemporalBinning_00024N_g(JNIEnv* env, jobject cls, int k) { return k == 2 ? ae_hs : (k ? ae_grd : ae_medt); }
+/* N.e(buffer, rowStride, w, h, nanoTime): P310 AE meter line, or null */
+__attribute__((visibility("default"))) jobject Java_TemporalBinning_00024N_e(JNIEnv* env, jobject cls, jobject buf, int rs, int w, int h, i64 now) {
+    GetAddr addr = (GetAddr)(*env)[230]; GetCap cap = (GetCap)(*env)[231];
+    const u16* p = buf ? (const u16*)addr(env, buf) : 0;
+    if (!p || cap(env, buf) < (i64)rs * (h - 1) + (i64)w * 2) return 0;
+    const char* t = ae_meter(p, rs, w, h, now);
+    return t ? ((NewStrUTF)(*env)[167])(env, t) : 0;
+}
 #endif

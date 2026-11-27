@@ -670,8 +670,23 @@ def patch_classes(raw):
     ret = len(c.w) - 1; assert c.w[ret] == 0x000e
     tNNS = T('Lnns;'); tOA = T('[Ljava/lang/Object;')
     info = {}
+    AEM = os.environ.get('AEMETER', '1') == '1'
+    if AEM:
+        mPair = M('Landroid/util/Pair;', 'create', '(Ljava/lang/Object;Ljava/lang/Object;)Landroid/util/Pair;')
+        fe_ = F('Llet;->e:Landroid/media/Image;')
     def E(base, na):
         a = S(base)
+        if AEM:   # P320: every RAW16 frame -> helper(Pair(image, image)) = AE meter (log only), own catch-all
+            a.L('m0')
+            a.cs(0, KFLAG); a.inv(0x71, forname, [0]); a.mro(0)
+            a.inv(0x6e, gdm, [0]); a.mro(0)
+            a.c4(1, 0); a.raw(0x46, 0x0100)                                  # aget-object v0, v0, v1
+            a.inv(0x71, mPair, [3, 3]); a.mro(1)                         # Pair.create(image, image)
+            a.raw(0x24 | 1 << 12, tOA, 1); a.mro(1)                          # filled-new-array {v1}, Object[]
+            a.c4(3, 0); a.inv(0x6e, minv, [0, 3, 1])
+            a.L('m1')
+            a.L('m2')
+            a.raw(0x54 | 3 << 8 | 2 << 12, fe_)                              # iget-object v3, v2, Llet.e (image back)
         a.raw(0x52 | 1 << 8 | 2 << 12, fb_)                                  # iget v1, v2, b
         if QUAD:                                                             # 8192 wide + 'quadTo' -> quad helper too
             a.c16(0, 16320); a.b22(0x32, 1, 0, 'go')
@@ -703,8 +718,14 @@ def patch_classes(raw):
         a.c16(0, 8192); a.raw(0x59 | 0 << 8 | 2 << 12, fb_)
         a.c16(0, 6144); a.raw(0x59 | 0 << 8 | 2 << 12, fc)
         a.go(na(ret))
-        w = a.done(); info['t0'] = a.lab['t0']; info['t1'] = a.lab['t1']; return w
+        w = a.done(); info['t0'] = a.lab['t0']; info['t1'] = a.lab['t1']
+        if AEM: info['m0'] = a.lab['m0']; info['m1'] = a.lab['m1']; info['m2'] = a.lab['m2']
+        return w
     L = insert(c, p, E); check(c)
+    if AEM:
+        for s_, n_, h_ in c.tries: assert s_ + n_ <= info['m0'] or s_ >= info['m1'], 'try overlap AEM'
+        c.handlers.append([[], info['m2']]); c.tries.append([info['m0'], info['m1'] - info['m0'], len(c.handlers) - 1])
+        print('P320 AE meter on every RAW16 frame')
     # catch-all for the reflective call -> return-void
     newret = len(c.w) - 1; assert c.w[newret] == 0x000e
     for s_, n_, h_ in c.tries: assert s_ + n_ <= info['t0'] or s_ >= info['t1'], 'try overlap'
@@ -835,6 +856,19 @@ def patch_classes(raw):
         a.inv(0x72, M('Ljava/util/Comparator;', 'compare', '(Ljava/lang/Object;Ljava/lang/Object;)I'), [0, 1, 2])
         return a.done()
     insert(c, 37, IR); check(c); fix_outs(c); out[m] = c.build()
+    # P316: config load a(String path): profile helper code 95 (path) before LMC copies it over the settings file
+    m = mid(d, BB + 'DLock$GestureListener;', 'a', '(Ljava/lang/String;)V'); c = Code(raw, d.code[m])
+    assert c.regs == 8 and c.ins == 2 and c.tries[0][0] == 1, (c.regs, c.tries)
+    def XS(base, na):
+        a = S(base)
+        a.c16(1, 95); a.inv(0x71, M('Ljava/lang/Integer;', 'valueOf', '(I)Ljava/lang/Integer;'), [1]); a.mro(1)
+        a.cs(2, sid(d, 'getWidth')); a.inv(0x71, forname, [2]); a.mro(2)
+        a.inv(0x6e, M('Ljava/lang/Class;', 'newInstance', '()Ljava/lang/Object;'), [2]); a.mro(2)
+        a.raw(0x1f | 2 << 8, T('Ljava/util/Comparator;'))
+        a.inv(0x72, M('Ljava/util/Comparator;', 'compare', '(Ljava/lang/Object;Ljava/lang/Object;)I'), [2, 1, 7])
+        return a.done()
+    insert(c, 0, XS); check(c); fix_outs(c); out[m] = c.build()
+    print('P316 xml import: chosen file re-applied after LMC restart write + toast')
     # the builder method: const-string 'Delete' -> 'Settings'
     sdel, sset = sid(d, 'Delete'), sid(d, 'Settings'); nd = 0
     for mm in [i for i in range(len(d.methods)) if d.methods[i][0] == BB + 'DLock$GestureListener;']:
@@ -1030,7 +1064,45 @@ def patch_classes2(raw):
         a = S(base)
         a.b21(0x38, 0, 'i0'); a.cs(1, s2('getWidth')); a.inv(0x71, menu, [1]); a.mr(1); a.b21(0x38, 1, 'i0'); a.c4(0, 2)
         a.L('i0'); return a.done()
-    insert(c2, 28, IN); check(c2); fix_outs(c2); repl[m2] = c2.build()
+    insert(c2, 28, IN); check(c2)
+    def IT(base, na):                           # P316: toast the import note left by profile code 98 (code 94)
+        a = S(base); a.c16(0, 94); prof(a, 0, 1, 2); return a.done()
+    insert(c2, 0, IT); check(c2); fix_outs(c2); repl[m2] = c2.build()
+    # P318: Aperture top-bar button = XML loader: onCheckedChanged -> profile helper 93 (button) -> list dialog; the
+    #       aperture state / ReInit are skipped
+    ma = one(d, 'LMC/UI/Button/Aperture$1;', 'onCheckedChanged'); ca = Code(raw5, d.code[ma])
+    assert ca.regs == 9 and ca.ins == 3 and ca.w[28] == 0x000e, ca.w[26:30]
+    def AP(base, na):
+        a = S(base)
+        a.c16(0, 93); a.inv(0x71, ivo, [0]); a.mro(0)
+        a.cs(1, s2('getWidth')); a.inv(0x71, fnm, [1]); a.mro(1); a.inv(0x6e, nin, [1]); a.mro(1)
+        a.raw(0x1f | 1 << 8, tcmp); a.inv(0x72, cmpm, [1, 0, 7])
+        a.go(na(28)); return a.done()
+    insert(ca, 0, AP); check(ca); fix_outs(ca); repl[ma] = ca.build()
+    # P319: the icon follows SelState 0 / 1 only (an imported XML can hold another value -> no icon): always state 0
+    mu = mid(d, 'LMC/UI/Button/Aperture;', 'UpdateUi', '(Landroid/content/Context;)V'); cu = Code(raw5, d.code[mu])
+    assert cu.w[0] & 0xff == 0x60 and (cu.w[0] >> 8) == 3, hex(cu.w[0])
+    cu.w[0] = 0x0312; cu.w[1] = 0x0000; repl[mu] = cu.build()                    # sget v3, SelState -> const/4 v3, 0; nop
+    # P319: XML loader in the top-bar row: OpenMode.initFabMenu adds an Aperture(Context) after PAT; the layout's own
+    #       Aperture (Context, AttributeSet) below the bar is hidden
+    mo = one(d, 'LMC/UI/OpenPref;', 'initFabMenu'); co = Code(raw5, d.code[mo])     # P320: top row (OpenPref), after Watermark
+    assert co.w[86] & 0xff == 0x62 and co.w[83] & 0xff == 0x6e, hex(co.w[86])
+    fhold = co.w[3]; tap_ = d.types.index('LMC/UI/Button/Aperture;')
+    ap_init = mid(d, 'LMC/UI/Button/Aperture;', '<init>', '(Landroid/content/Context;)V')
+    gctx = mid(d, 'LMC/UI/OpenPref;', 'getContext', '()Landroid/content/Context;')
+    aladd = mid(d, 'Ljava/util/ArrayList;', 'add', '(Ljava/lang/Object;)Z')
+    def FM(base, na):
+        a = S(base)
+        a.raw(0x54 | 3 << 8 | 8 << 12, fhold); a.raw(0x22 | 4 << 8, tap_)
+        a.inv(0x6e, gctx, [8]); a.mro(5); a.inv(0x70, ap_init, [4, 5]); a.inv(0x6e, aladd, [3, 4])
+        return a.done()
+    insert(co, 86, FM); check(co); fix_outs(co); repl[mo] = co.build()
+    ml = mid(d, 'LMC/UI/Button/Aperture;', '<init>', '(Landroid/content/Context;Landroid/util/AttributeSet;)V'); cl = Code(raw5, d.code[ml])
+    assert cl.regs == 4 and cl.w[13] == 0x000e, cl.w
+    sv = mid(d, 'LMC/UI/Button/Aperture;', 'setVisibility', '(I)V')
+    def HV(base, na):
+        a = S(base); a.c16(0, 8); a.inv(0x6e, sv, [1, 0]); return a.done()
+    insert(cl, 13, HV); check(cl); fix_outs(cl); repl[ml] = cl.build()
     # UpdateUi(v7 this, v8 ctx): icon + alpha for the 3 states, return
     m3 = one(d, UC, 'UpdateUi'); c3 = Code(raw5, d.code[m3])
     assert c3.regs == 9 and c3.ins == 2
